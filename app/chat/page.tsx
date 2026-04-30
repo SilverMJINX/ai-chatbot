@@ -169,12 +169,13 @@ export default function ChatPage() {
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       const transcript = Array.from(event.results)
-        .map((r) => r[0].transcript)
+        .map((r: any) => r[0].transcript)
         .join("");
-      setInput(transcript);
-    };
+
+  setInput(transcript);
+};
 
     recognition.onend = () => {
       setIsListening(false);
