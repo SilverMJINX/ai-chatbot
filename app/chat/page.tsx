@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 
+type SpeechRecognition = any;
+type SpeechRecognitionEvent = any;
+
 const USERNAME = "Admin"; // Default is Admin
 
 type Message = {
