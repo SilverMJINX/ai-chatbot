@@ -19,9 +19,12 @@ export async function POST(req: NextRequest) {
   try {
     const { messages } = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
-    }
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+  return NextResponse.json(
+    { error: "Invalid request" },
+    { status: 400 }
+  );
+}
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-lite",
@@ -31,11 +34,11 @@ export async function POST(req: NextRequest) {
     // Convert messages to Gemini format
     // Skip the first assistant message (greeting) for history
     const history = messages
-      .slice(1, -1) // exclude greeting and last user message
+      .slice(1)
       .map((msg: { role: string; content: string }) => ({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
-      }));
+  }));
 
     const chat = model.startChat({
       history,

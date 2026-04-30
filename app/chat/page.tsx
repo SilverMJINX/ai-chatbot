@@ -113,8 +113,17 @@ export default function ChatPage() {
       });
 
       if (!response.ok) throw new Error("Failed to get response");
+      let data;
+    try {
+      data = await response.json();
+      } catch {
+        throw new Error("Invalid response format");
+      }
 
-      const data = await response.json();
+    if (!data?.content) {
+      throw new Error("Invalid response format");
+      }
+      
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
