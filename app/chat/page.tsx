@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 
-const USERNAME = "Admin"; // Default will be Admin
+const USERNAME = "Admin"; // Default is Admin
 
 type Message = {
   id: string;
@@ -148,9 +148,9 @@ export default function ChatPage() {
       return;
     }
 
-    const SpeechRecognitionAPI =
-      (window as Window & { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition ||
-      window.SpeechRecognition;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any;
+    const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
 
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
