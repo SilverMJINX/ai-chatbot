@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useElevenLabsTTS } from '@/hooks/useElevenLabsTTS';
 
 type Message = {
   id: string;
