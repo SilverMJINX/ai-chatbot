@@ -131,8 +131,6 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     }
   };
 
-  console.log('state:', { loading, error, textLen: text.length, chapters: chapters.length, lines: lines.length });
-
   return (
     <div className="reader-overlay" onClick={onClose}>
       <div className="reader-panel" onClick={e => e.stopPropagation()}>
@@ -144,6 +142,11 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
             <p className="reader-author">{book.authors.map(a => a.name).join(', ')}</p>
           </div>
           <button className="icon-btn" onClick={onClose} title="Close" type="button">✕</button>
+        </div>
+
+      // Debug info
+        <div style={{ background: 'red', color: 'white', padding: 8, fontSize: 12 }}>
+          loading:{String(loading)} | error:{error || 'none'} | text:{text.length} | lines:{lines.length}
         </div>
 
         {loading && <p className="reader-status">Loading text…</p>}
