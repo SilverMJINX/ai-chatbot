@@ -131,6 +131,8 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     }
   };
 
+  console.log('state:', { loading, error, textLen: text.length, chapters: chapters.length, lines: lines.length });
+
   return (
     <div className="reader-overlay" onClick={onClose}>
       <div className="reader-panel" onClick={e => e.stopPropagation()}>
