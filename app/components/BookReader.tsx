@@ -10,46 +10,50 @@ interface Book {
 }
 
 function splitChapters(text: string): string[] {
-  return text
-    .split(/\n{3,}|(?=\bCHAPTER\b)/i)
+  const chunks = text
+    .split(/(?=\bCHAPTER\s+[IVXLCDM\d]+\b)/i)
     .map(c => c.trim())
-    .filter(c => c.length > 200);
+    .filter(Boolean);
+  // If no chapter headings found, return whole text as one chunk
+  return chunks.length > 1 ? chunks : [text.trim()];
 }
 
 function splitLines(section: string): string[] {
   return section
-    .split(/\n/)
+    .split(/\n+/)
     .map(l => l.trim())
-    .filter(l => l.length > 0);
+    .filter(l => l.length > 20);
 }
 
 const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
-// ms per line at 1× speed
 const BASE_INTERVAL = 2800;
 
 export function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
-  const [text, setText]         = useState('');
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [chapter, setChapter]   = useState(0);
-  const [lineIdx, setLineIdx]   = useState(0);
-  const [playing, setPlaying]   = useState(false);
-  const [speed, setSpeed]       = useState<number>(1);
+  const [text, setText]       = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
+  const [chapter, setChapter] = useState(0);
+  const [lineIdx, setLineIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed]     = useState<number>(1);
 
   const { speak, stop, status } = useElevenLabsTTS();
-  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lineRefs  = useRef<(HTMLDivElement | null)[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Fetch text
+  // Fetch text 
   useEffect(() => {
     setLoading(true);
     setError('');
     fetch(`/api/books/${book.id}/text`)
       .then(r => r.ok ? r.text() : Promise.reject('unavailable'))
-      .then(t => setText(t))
+      .then(t => {
+        console.log('text bytes:', t.length, '| chapters:', splitChapters(t).length);
+        setText(t);
+      })
       .catch(() => setError('Full text unavailable for this book.'))
       .finally(() => setLoading(false));
-    return () => { stop(); clearInterval(timerRef.current!); };
+    return () => { clearInterval(timerRef.current!); };
   }, [book.id]);
 
   const chapters = splitChapters(text);
@@ -57,7 +61,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
   const total    = lines.length;
   const progress = total > 0 ? ((lineIdx + 1) / total) * 100 : 0;
 
-  // Reset on chapter change
+  // Reset on chapter change 
   useEffect(() => {
     stop();
     setPlaying(false);
@@ -70,7 +74,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     lineRefs.current[lineIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [lineIdx]);
 
-  // Speak active line whenever it changes while playing
+  // Speak active line whenever it changes while playing 
   useEffect(() => {
     if (playing && lines[lineIdx]) speak(lines[lineIdx]);
   }, [lineIdx, playing]);
@@ -96,7 +100,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     return () => clearInterval(timerRef.current!);
   }, [playing, startTimer]);
 
-  //  Controls 
+  // Controls 
   const togglePlay = () => {
     if (playing) { stop(); setPlaying(false); }
     else { setPlaying(true); }
@@ -131,7 +135,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     <div className="reader-overlay" onClick={onClose}>
       <div className="reader-panel" onClick={e => e.stopPropagation()}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div className="reader-header">
           <div>
             <h2 className="reader-title">{book.title}</h2>
@@ -145,7 +149,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
 
         {!loading && !error && (
           <>
-            {/* ── Controls bar ── */}
+            {/* Controls bar */}
             <div className="reader-tts-bar">
 
               {/* Progress */}
@@ -158,7 +162,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
                 </span>
               </div>
 
-              {/* Playback */}
+              {/* Playback buttons */}
               <div className="reader-btn-row">
                 <button
                   className="chip chip-blue reader-ctrl-btn"
@@ -203,7 +207,6 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
 
                 <div style={{ flex: 1 }} />
 
-                {/* Speed */}
                 <span className="tts-label">Speed:</span>
                 {SPEED_OPTIONS.map(s => (
                   <button
@@ -237,8 +240,13 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
               </div>
             </div>
 
-            {/* ── Line-by-line body ── */}
+            {/* Line-by-line body */}
             <div className="reader-body">
+              {lines.length === 0 && (
+                <p style={{ color: 'red', fontSize: 13 }}>
+                  No lines found — text length: {text.length}, chapters: {chapters.length}
+                </p>
+              )}
               {lines.map((line, i) => (
                 <div
                   key={i}
