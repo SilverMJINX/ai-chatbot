@@ -14,6 +14,43 @@ type SpeechRecognitionEvent = any;
 
 const USERNAME = "Admin"; // Default username for personalization, can be made dynamic later
 
+//ElevenLabs
+const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
+const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
+ 
+async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_LABS_VOICE_ID}/stream`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": ELEVEN_LABS_API_KEY,
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_turbo_v2_5",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.8,
+          style: 0.2,
+          use_speaker_boost: true,
+        },
+      }),
+    }
+  );
+ 
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err?.detail?.message || "ElevenLabs TTS failed");
+  }
+ 
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  return audio;
+}
+
 const INITIAL_MESSAGE: Message = {
   id: "init",
   role: "assistant",

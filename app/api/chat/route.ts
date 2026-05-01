@@ -27,14 +27,14 @@ export async function POST(req: NextRequest) {
 }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-lite",
+      model: "gemini-2.5-flash",
       systemInstruction: SYSTEM_PROMPT,
     });
 
     // Convert messages to Gemini format
     // Skip the first assistant message (greeting) for history
     const history = messages
-      .slice(1)
+      .slice(1, -1)
       .map((msg: { role: string; content: string }) => ({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }],
