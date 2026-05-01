@@ -6,23 +6,33 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
-  const res = await fetch(
-    `https://project-gutenberg-books-api.p.rapidapi.com/api/books/${id}/text?cleaning_mode=simple`,
-    {
-      headers: {
-        "X-RapidAPI-Key":  process.env.GUTENBERG_API_KEY!,
-        "X-RapidAPI-Host": "project-gutenberg-books-api.p.rapidapi.com",
-      },
-      next: { revalidate: 86400 },
-    }
-  );
+  const candidates = [
+    `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
+    `https://www.gutenberg.org/files/${id}/${id}.txt`,
+    `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`,
+  ];
 
-  if (!res.ok) {
-    return Response.json({ error: "Text unavailable" }, { status: 404 });
+  for (const url of candidates) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (res.ok) {
+      const raw = await res.text();
+      return new Response(stripBoilerplate(raw), {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
   }
 
-  const data = await res.json();
-  return new Response(data.text ?? "", {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  return Response.json({ error: "Text unavailable" }, { status: 404 });
+}
+
+function stripBoilerplate(text: string): string {
+  const start = /\*\*\* START OF (THE|THIS) PROJECT GUTENBERG/i;
+  const end   = /\*\*\* END OF (THE|THIS) PROJECT GUTENBERG/i;
+  const si = text.search(start);
+  const ei = text.search(end);
+  if (si !== -1) {
+    const after = text.indexOf('\n', si) + 1;
+    return (ei !== -1 ? text.slice(after, ei) : text.slice(after)).trim();
+  }
+  return text.trim();
 }
