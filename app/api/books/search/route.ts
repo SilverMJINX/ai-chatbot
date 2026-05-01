@@ -1,14 +1,12 @@
 import { NextRequest } from "next/server";
-
+// Test API
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get('q') ?? '';
-  const page = searchParams.get('page') ?? '1';
+  const q     = searchParams.get('q') ?? '';
+  const topic = searchParams.get('topic') ?? '';
+  const page  = searchParams.get('page') ?? '1';
 
-  const params = new URLSearchParams({ q, page_size: '12' });
-
-  console.log("Searching for:", q);
-  console.log("Key exists:", !!process.env.GUTENBERG_API_KEY);
+  const params = new URLSearchParams({ q, topic, page_size: '12' });
 
   const res = await fetch(
     `https://project-gutenberg-books-api.p.rapidapi.com/api/books?${params}`,
@@ -17,16 +15,10 @@ export async function GET(req: NextRequest) {
         "X-RapidAPI-Key":  process.env.GUTENBERG_API_KEY!,
         "X-RapidAPI-Host": "project-gutenberg-books-api.p.rapidapi.com",
       },
-      cache: "no-store",
+      next: { revalidate: 3600 },
     }
   );
 
-  console.log("Status:", res.status);
   const data = await res.json();
-  console.log("Raw response:", JSON.stringify(data).slice(0, 500));
-
-  // Normalize — handle whatever shape RapidAPI returns
-  const books = data.results ?? data.books ?? data.data ?? data ?? [];
-
-  return Response.json({ results: Array.isArray(books) ? books : [] });
+  return Response.json(data);
 }
