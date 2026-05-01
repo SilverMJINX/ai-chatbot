@@ -2,11 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 
-type SpeechRecognition = any;
-type SpeechRecognitionEvent = any;
-
-const USERNAME = "Admin"; // Default is Admin
-
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -14,25 +9,29 @@ type Message = {
   timestamp: Date;
 };
 
+type SpeechRecognition = any;
+type SpeechRecognitionEvent = any;
+
+const USERNAME = "Admin"; // Default username for personalization, can be made dynamic later
+
 const INITIAL_MESSAGE: Message = {
   id: "init",
   role: "assistant",
-  content: `Hi, ${USERNAME}! How are you today?`,
+  content: `Hi, ${USERNAME}! I'm your AI therapist. I'm here to listen and support you. How are you feeling today?`,
   timestamp: new Date(),
 };
 
 function TypingIndicator() {
   return (
-    <div className="flex items-end gap-3 mb-6">
-      <div className="w-8 h-8 rounded-full bg-sage-200 flex items-center justify-center flex-shrink-0">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a7a6a" strokeWidth="2">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z" />
+    <div className="msg-row ai-row">
+      <div className="ai-avatar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+          <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+          <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
         </svg>
       </div>
-      <div className="typing-bubble">
-        <span className="dot" />
-        <span className="dot" />
-        <span className="dot" />
+      <div className="bubble ai-bubble typing-bubble">
+        <span className="dot" /><span className="dot" /><span className="dot" />
       </div>
     </div>
   );
@@ -41,25 +40,22 @@ function TypingIndicator() {
 function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === "user";
   return (
-    <div className={`flex items-end gap-3 mb-6 ${isUser ? "flex-row-reverse" : ""}`}>
+    <div className={`msg-row ${isUser ? "user-row" : "ai-row"}`}>
       {!isUser && (
-        <div className="w-8 h-8 rounded-full bg-sage-200 flex items-center justify-center flex-shrink-0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a7a6a" strokeWidth="2">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z" />
+        <div className="ai-avatar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+            <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+            <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
           </svg>
         </div>
       )}
-      <div className={`message-bubble ${isUser ? "user-bubble" : "ai-bubble"}`}>
+      <div className={`bubble ${isUser ? "user-bubble" : "ai-bubble"}`}>
         <p>{message.content}</p>
-        <span className="msg-time">
-          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
+        <time>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
       </div>
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-clay-200 flex items-center justify-center flex-shrink-0">
-          <span className="text-xs font-semibold text-clay-700">
-            {USERNAME.charAt(0).toUpperCase()}
-          </span>
+        <div className="user-avatar">
+          {USERNAME.charAt(0).toUpperCase()}
         </div>
       )}
     </div>
@@ -90,43 +86,30 @@ export default function ChatPage() {
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
     setError(null);
-
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
       content: text.trim(),
       timestamp: new Date(),
     };
-
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
-
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: updatedMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
         }),
       });
-
       if (!response.ok) throw new Error("Failed to get response");
       let data;
-    try {
-      data = await response.json();
-      } catch {
-        throw new Error("Invalid response format");
-      }
-
-    if (!data?.content) {
-      throw new Error("Invalid response format");
-      }
-      
+      try { 
+        data = await response.json(); 
+      } catch { throw new Error("Invalid response format"); }
+      if (!data?.content) throw new Error("Invalid response format");
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -142,50 +125,26 @@ export default function ChatPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
   };
 
   const toggleVoice = () => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
-      setError("Voice input is not supported in this browser.");
-      return;
+      setError("Voice input is not supported in this browser."); return;
     }
-
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return; }
     const w = window as any;
     const SpeechRecognitionAPI = w.SpeechRecognition || w.webkitSpeechRecognition;
-
     const recognition = new SpeechRecognitionAPI();
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
-
     recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((r: any) => r[0].transcript)
-        .join("");
-
-  setInput(transcript);
-};
-
-    recognition.onend = () => {
-      setIsListening(false);
+      const transcript = Array.from(event.results).map((r: any) => r[0].transcript).join("");
+      setInput(transcript);
     };
-
-    recognition.onerror = () => {
-      setIsListening(false);
-      setError("Voice recognition failed. Please try again.");
-    };
-
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => { setIsListening(false); setError("Voice recognition failed. Please try again."); };
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
@@ -194,162 +153,338 @@ export default function ChatPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;1,400&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-          --sage-50: #f4f7f4;
-          --sage-100: #e4ede6;
-          --sage-200: #c4d8c9;
-          --sage-400: #7aaa87;
-          --sage-600: #4d7d5a;
-          --sage-700: #3a6147;
-          --clay-100: #f5ede8;
-          --clay-200: #ecd4c6;
-          --clay-400: #c4866a;
-          --clay-700: #7a4630;
-          --warm-bg: #faf8f5;
-          --text-primary: #2c2c2a;
-          --text-muted: #7a7870;
-          --border: rgba(0,0,0,0.08);
+          /* Blue palette */
+          --blue:        #4a90d9;
+          --blue-dark:   #2563a8;
+          --blue-deeper: #1a4a80;
+          --blue-light:  #dbeafe;
+          --blue-soft:   #eff6ff;
+          --blue-mid:    #bfdbfe;
+          --blue-glow:   rgba(74,144,217,0.25);
+
+          /* Accent for voice/error */
+          --coral:       #f87171;
+          --coral-light: #fff5f5;
+          --amber:       #fbbf24;
+
+          /* Neutrals */
+          --bg:          #f0f6ff;
+          --white:       #ffffff;
+          --text:        #1e3a5f;
+          --text-mid:    #4a6080;
+          --text-soft:   #8aaac8;
+          --border:      #d0e4f7;
+          --shadow-sm:   0 1px 4px rgba(37,99,168,0.07);
+          --shadow-md:   0 4px 20px rgba(37,99,168,0.1);
         }
+
+        html, body { height: 100%; }
 
         body {
-          font-family: 'DM Sans', sans-serif;
-          background: var(--warm-bg);
-          color: var(--text-primary);
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          background: var(--bg);
+          color: var(--text);
           min-height: 100vh;
-          background-image: radial-gradient(ellipse at 20% 0%, #e8f0e9 0%, transparent 50%),
-                            radial-gradient(ellipse at 80% 100%, #f5ede8 0%, transparent 50%);
+          background-image:
+            radial-gradient(ellipse 55% 40% at 90% 5%,  rgba(74,144,217,0.12) 0%, transparent 60%),
+            radial-gradient(ellipse 45% 45% at 5%  95%, rgba(74,144,217,0.08) 0%, transparent 60%);
         }
 
-        .chat-layout {
-          display: flex;
-          flex-direction: column;
+        /* ── Page layout ── */
+        .page-wrap {
+          display: grid;
+          grid-template-rows: 64px 1fr;
           height: 100vh;
-          max-width: 760px;
-          margin: 0 auto;
         }
 
-        /* Header */
-        .chat-header {
-          padding: 1.5rem 2rem 1rem;
+        /* ── Top nav ── */
+        .topnav {
+          background: var(--white);
+          border-bottom: 1px solid var(--border);
           display: flex;
           align-items: center;
-          gap: 1rem;
-          border-bottom: 1px solid var(--border);
-          background: rgba(250,248,245,0.85);
-          backdrop-filter: blur(12px);
-          position: sticky;
-          top: 0;
-          z-index: 10;
+          padding: 0 32px;
+          gap: 16px;
+          box-shadow: var(--shadow-sm);
+          z-index: 20;
         }
 
-        .avatar {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, var(--sage-200), var(--sage-400));
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          text-decoration: none;
+          flex-shrink: 0;
+        }
+
+        .brand-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
           display: flex;
           align-items: center;
           justify-content: center;
+          box-shadow: 0 4px 12px var(--blue-glow);
         }
 
-        .header-text h1 {
-          font-family: 'Lora', serif;
-          font-size: 1.1rem;
-          font-weight: 500;
-          color: var(--text-primary);
-          letter-spacing: -0.01em;
+        .brand-name {
+          font-family: 'Fraunces', Georgia, serif;
+          font-size: 1.3rem;
+          font-weight: 600;
+          color: var(--text);
+          letter-spacing: -0.02em;
         }
 
-        .header-text p {
-          font-size: 0.75rem;
-          color: var(--sage-600);
-          font-weight: 400;
+        .brand-name span { color: var(--blue); }
+
+        .nav-divider {
+          width: 1px;
+          height: 24px;
+          background: var(--border);
+          margin: 0 4px;
         }
 
-        .status-dot {
+        .nav-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          background: var(--blue-soft);
+          color: var(--blue-dark);
+          font-size: 0.72rem;
+          font-weight: 600;
+          padding: 5px 12px;
+          border-radius: 20px;
+          border: 1px solid var(--blue-mid);
+          letter-spacing: 0.02em;
+        }
+
+        .live-dot {
           width: 7px;
           height: 7px;
-          background: var(--sage-400);
           border-radius: 50%;
-          display: inline-block;
-          margin-right: 5px;
-          animation: pulse 2s infinite;
+          background: var(--blue);
+          animation: livePulse 2s infinite;
         }
 
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,144,217,0.4); }
+          50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(74,144,217,0); }
         }
 
-        /* Messages area */
+        .nav-spacer { flex: 1; }
+
+        .nav-user {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 6px 12px;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .nav-user:hover { background: var(--bg); }
+
+        .nav-user-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.78rem;
+          font-weight: 700;
+          color: white;
+          box-shadow: 0 2px 8px var(--blue-glow);
+        }
+
+        .nav-user-name {
+          font-size: 0.85rem;
+          font-weight: 600;
+          color: var(--text);
+        }
+
+        /* ── Main chat ── */
+        .main {
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          max-width: 860px;
+          width: 100%;
+          margin: 0 auto;
+          padding: 0 24px;
+        }
+
+        /* Chat subheader */
+        .chat-subheader {
+          padding: 18px 0 14px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          flex-shrink: 0;
+          border-bottom: 1px solid var(--border);
+        }
+
+        .ai-avatar-lg {
+          width: 46px;
+          height: 46px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 14px var(--blue-glow);
+          flex-shrink: 0;
+        }
+
+        .chat-subheader-text h2 {
+          font-size: 0.98rem;
+          font-weight: 700;
+          color: var(--text);
+        }
+
+        .chat-subheader-text p {
+          font-size: 0.74rem;
+          color: var(--text-soft);
+          margin-top: 2px;
+        }
+
+        .subheader-chips {
+          margin-left: auto;
+          display: flex;
+          gap: 8px;
+        }
+
+        .chip {
+          font-size: 0.71rem;
+          font-weight: 600;
+          padding: 5px 11px;
+          border-radius: 20px;
+          border: 1.5px solid;
+          white-space: nowrap;
+        }
+
+        .chip-blue  {
+          color: var(--blue-dark);
+          background: var(--blue-soft);
+          border-color: var(--blue-mid);
+        }
+
+        .chip-coral {
+          color: #b91c1c;
+          background: var(--coral-light);
+          border-color: #fca5a5;
+        }
+
+        /* ── Messages ── */
         .messages-area {
           flex: 1;
           overflow-y: auto;
-          padding: 2rem 2rem 1rem;
+          padding: 24px 0 12px;
+          display: flex;
+          flex-direction: column;
           scroll-behavior: smooth;
         }
 
-        .messages-area::-webkit-scrollbar { width: 4px; }
+        .messages-area::-webkit-scrollbar { width: 5px; }
         .messages-area::-webkit-scrollbar-track { background: transparent; }
-        .messages-area::-webkit-scrollbar-thumb { background: var(--sage-200); border-radius: 2px; }
+        .messages-area::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
 
-        /* Message bubbles */
-        .message-bubble {
-          max-width: 72%;
-          padding: 0.85rem 1.1rem;
-          border-radius: 18px;
-          position: relative;
+        .msg-row {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          margin-bottom: 16px;
+          animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1);
         }
 
-        .message-bubble p {
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .user-row { flex-direction: row-reverse; }
+
+        .ai-avatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 3px 10px var(--blue-glow);
+          flex-shrink: 0;
+        }
+
+        .user-avatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #60a5fa, var(--blue));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: white;
+          flex-shrink: 0;
+          box-shadow: 0 3px 10px var(--blue-glow);
+        }
+
+        .bubble {
+          max-width: 62%;
+          padding: 12px 16px;
+          border-radius: 20px;
           font-size: 0.9rem;
-          line-height: 1.6;
+          line-height: 1.65;
+        }
+
+        .bubble p { color: inherit; }
+
+        .bubble time {
+          display: block;
+          font-size: 0.65rem;
+          margin-top: 6px;
+          opacity: 0.45;
         }
 
         .ai-bubble {
-          background: white;
+          background: var(--white);
           border: 1px solid var(--border);
-          border-bottom-left-radius: 4px;
-          box-shadow: 0 1px 8px rgba(0,0,0,0.04);
+          border-bottom-left-radius: 6px;
+          color: var(--text);
+          box-shadow: var(--shadow-sm);
         }
 
         .user-bubble {
-          background: var(--sage-600);
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          border-bottom-right-radius: 6px;
           color: white;
-          border-bottom-right-radius: 4px;
+          box-shadow: 0 4px 16px var(--blue-glow);
         }
 
-        .user-bubble p { color: white; }
+        .user-bubble time { color: rgba(255,255,255,0.65); }
 
-        .msg-time {
-          font-size: 0.68rem;
-          display: block;
-          margin-top: 4px;
-          opacity: 0.5;
-        }
-
-        /* Typing indicator */
+        /* Typing dots */
         .typing-bubble {
-          background: white;
-          border: 1px solid var(--border);
-          border-bottom-left-radius: 4px;
-          padding: 0.85rem 1.1rem;
-          border-radius: 18px;
           display: flex;
-          gap: 5px;
           align-items: center;
-          box-shadow: 0 1px 8px rgba(0,0,0,0.04);
+          gap: 5px;
+          padding: 16px 18px;
         }
 
         .dot {
           width: 7px;
           height: 7px;
-          background: var(--sage-400);
           border-radius: 50%;
+          background: var(--blue);
           display: inline-block;
           animation: bounce 1.3s infinite ease-in-out;
         }
@@ -357,38 +492,44 @@ export default function ChatPage() {
         .dot:nth-child(3) { animation-delay: 0.3s; }
 
         @keyframes bounce {
-          0%, 60%, 100% { transform: translateY(0); }
-          30% { transform: translateY(-6px); }
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+          30% { transform: translateY(-7px); opacity: 1; }
         }
 
-        /* Color helpers for avatar */
-        .bg-sage-200 { background-color: var(--sage-200); }
-        .bg-clay-200 { background-color: var(--clay-200); }
-        .text-clay-700 { color: var(--clay-700); }
-
-        /* Input area */
+        /* ── Input ── */
         .input-area {
-          padding: 1rem 2rem 1.5rem;
-          background: rgba(250,248,245,0.9);
-          backdrop-filter: blur(12px);
-          border-top: 1px solid var(--border);
+          padding: 14px 0 22px;
+          flex-shrink: 0;
+        }
+
+        .error-msg {
+          font-size: 0.78rem;
+          color: #b91c1c;
+          background: var(--coral-light);
+          border: 1px solid #fca5a5;
+          border-radius: 10px;
+          padding: 8px 14px;
+          margin-bottom: 10px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
         }
 
         .input-wrapper {
           display: flex;
           align-items: flex-end;
           gap: 10px;
-          background: white;
-          border: 1px solid var(--border);
+          background: var(--white);
+          border: 2px solid var(--border);
           border-radius: 20px;
-          padding: 8px 8px 8px 16px;
-          box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+          padding: 10px 10px 10px 20px;
           transition: border-color 0.2s, box-shadow 0.2s;
+          box-shadow: var(--shadow-sm);
         }
 
         .input-wrapper:focus-within {
-          border-color: var(--sage-400);
-          box-shadow: 0 2px 16px rgba(74,125,90,0.12);
+          border-color: var(--blue);
+          box-shadow: 0 0 0 4px rgba(74,144,217,0.12);
         }
 
         textarea {
@@ -397,150 +538,223 @@ export default function ChatPage() {
           outline: none;
           background: transparent;
           resize: none;
-          font-family: 'DM Sans', sans-serif;
+          font-family: 'Plus Jakarta Sans', sans-serif;
           font-size: 0.9rem;
-          color: var(--text-primary);
+          color: var(--text);
           line-height: 1.5;
-          min-height: 36px;
+          min-height: 38px;
           max-height: 140px;
           padding: 6px 0;
+          caret-color: var(--blue);
         }
 
-        textarea::placeholder { color: var(--text-muted); }
+        textarea::placeholder { color: var(--text-soft); }
+
+        .input-actions {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-shrink: 0;
+        }
 
         .icon-btn {
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
           border: none;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          flex-shrink: 0;
-          transition: all 0.2s;
+          transition: all 0.18s;
         }
 
         .voice-btn {
-          background: var(--sage-50);
-          color: var(--sage-600);
+          background: var(--blue-soft);
+          color: var(--blue-dark);
+          border: 1.5px solid var(--blue-mid);
         }
-
-        .voice-btn:hover { background: var(--sage-100); }
-
+        .voice-btn:hover { background: var(--blue-light); }
         .voice-btn.active {
-          background: var(--clay-400);
-          color: white;
+          background: var(--coral-light);
+          color: var(--coral);
+          border-color: #fca5a5;
           animation: voicePulse 1.2s infinite;
         }
 
         @keyframes voicePulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(196, 134, 106, 0.4); }
-          50% { box-shadow: 0 0 0 8px rgba(196, 134, 106, 0); }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.35); }
+          50%       { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
         }
 
         .send-btn {
-          background: var(--sage-600);
+          background: linear-gradient(135deg, var(--blue), #6baee8);
           color: white;
+          box-shadow: 0 4px 14px var(--blue-glow);
+        }
+        .send-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(74,144,217,0.4); }
+        .send-btn:disabled {
+          background: var(--blue-light);
+          color: var(--text-soft);
+          box-shadow: none;
+          cursor: not-allowed;
+          transform: none;
         }
 
-        .send-btn:hover { background: var(--sage-700); transform: scale(1.05); }
-        .send-btn:disabled { background: var(--sage-200); cursor: not-allowed; transform: none; }
-
-        .error-msg {
-          font-size: 0.8rem;
-          color: #c0392b;
-          text-align: center;
-          padding: 6px;
-          margin-bottom: 8px;
+        .input-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 10px;
+          padding: 0 4px;
         }
 
-        .input-hint {
-          font-size: 0.72rem;
-          color: var(--text-muted);
-          text-align: center;
-          margin-top: 8px;
+        .input-hint { font-size: 0.69rem; color: var(--text-soft); }
+
+        .powered-by {
+          font-size: 0.69rem;
+          color: var(--text-soft);
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+        .powered-by span { color: var(--blue-dark); font-weight: 600; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+          .topnav { padding: 0 16px; }
+          .main { padding: 0 16px; }
+          .subheader-chips { display: none; }
+          .bubble { max-width: 78%; }
         }
 
-        /* Message entry animation */
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
+        @media (max-width: 480px) {
+          .brand-name { display: none; }
+          .nav-badge { display: none; }
+          .bubble { max-width: 88%; font-size: 0.875rem; }
         }
-
-        .flex { animation: fadeUp 0.3s ease; }
       `}</style>
 
-      <div className="chat-layout">
-        {/* Header */}
-        <header className="chat-header">
-          <div className="avatar">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-              <path d="M12 2a5 5 0 1 0 0 10A5 5 0 0 0 12 2zm0 12c-5.33 0-8 2.67-8 4v1h16v-1c0-1.33-2.67-4-8-4z" fill="white" stroke="none"/>
-            </svg>
-          </div>
-          <div className="header-text">
-            <h1>Atlas</h1>
-            <p><span className="status-dot" />Your AI Therapist · Always here</p>
-          </div>
-        </header>
+      <div className="page-wrap">
 
-        {/* Messages */}
-        <div className="messages-area">
-          {messages.map((msg) => (
-            <ChatMessage key={msg.id} message={msg} />
-          ))}
-          {isLoading && <TypingIndicator />}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <div className="input-area">
-          {error && <p className="error-msg">{error}</p>}
-          <div className="input-wrapper">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Share what's on your mind…"
-              rows={1}
-              disabled={isLoading}
-            />
-            <button
-              className={`icon-btn voice-btn ${isListening ? "active" : ""}`}
-              onClick={toggleVoice}
-              title={isListening ? "Stop listening" : "Voice input"}
-              type="button"
-            >
-              {isListening ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="6" width="12" height="12" rx="2" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-              )}
-            </button>
-            <button
-              className="icon-btn send-btn"
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || isLoading}
-              type="button"
-              title="Send message"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+        {/* ── Top nav ── */}
+        <nav className="topnav">
+          <div className="brand">
+            <div className="brand-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
               </svg>
-            </button>
+            </div>
+            <span className="brand-name">At<span>las</span></span>
           </div>
-          <p className="input-hint">Press Enter to send · Shift+Enter for new line</p>
-        </div>
+
+          <div className="nav-divider" />
+
+          <div className="nav-badge">
+            <span className="live-dot" />
+            Session Active
+          </div>
+
+          <div className="nav-spacer" />
+
+          <div className="nav-user">
+            <div className="nav-user-avatar">{USERNAME.charAt(0)}</div>
+            <span className="nav-user-name">{USERNAME}</span>
+          </div>
+        </nav>
+
+        {/* ── Main ── */}
+        <main className="main">
+
+          {/* Chat subheader */}
+          <div className="chat-subheader">
+            <div className="ai-avatar-lg">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+              </svg>
+            </div>
+            <div className="chat-subheader-text">
+              <h2>Atlas · AI Therapist</h2>
+              <p>Always here to listen and support you</p>
+            </div>
+            <div className="subheader-chips">
+              <span className="chip chip-blue">Private Session</span>
+              <span className="chip chip-coral">Call 03-76272929 (Befrienders KL)</span>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="messages-area">
+            {messages.map((msg) => (
+              <ChatMessage key={msg.id} message={msg} />
+            ))}
+            {isLoading && <TypingIndicator />}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="input-area">
+            {error && (
+              <p className="error-msg">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {error}
+              </p>
+            )}
+            <div className="input-wrapper">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Share what's on your mind…"
+                rows={1}
+                disabled={isLoading}
+              />
+              <div className="input-actions">
+                <button
+                  className={`icon-btn voice-btn ${isListening ? "active" : ""}`}
+                  onClick={toggleVoice}
+                  title={isListening ? "Stop listening" : "Voice input"}
+                  type="button"
+                >
+                  {isListening ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className="icon-btn send-btn"
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || isLoading}
+                  type="button"
+                  title="Send"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="22" y1="2" x2="11" y2="13"/>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="input-footer">
+              <span className="input-hint">Enter to send · Shift+Enter for new line</span>
+              <span className="powered-by">Powered by <span>Gemini</span></span>
+            </div>
+          </div>
+        </main>
+
       </div>
     </>
   );
