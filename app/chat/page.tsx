@@ -12,12 +12,12 @@ type Message = {
 type SpeechRecognition = any;
 type SpeechRecognitionEvent = any;
 
-const USERNAME = "Admin"; // Default username for personalization, can be made dynamic later
+const USERNAME = "Admin";
 
-//ElevenLabs
+// ElevenLabs TTS integration
 const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
-const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
- 
+const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G"; // Custom voice: Victoria
+
 async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_LABS_VOICE_ID}/stream`,
@@ -39,12 +39,12 @@ async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
       }),
     }
   );
- 
+
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err?.detail?.message || "ElevenLabs TTS failed");
   }
- 
+
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
@@ -74,6 +74,115 @@ function TypingIndicator() {
   );
 }
 
+// ── TTS button embedded in each AI bubble ────────────────────────────────────
+function TTSButton({ text }: { text: string }) {
+  const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handleClick = async () => {
+    // If currently playing, stop
+    if (status === "playing") {
+      audioRef.current?.pause();
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      audioRef.current = null;
+      setStatus("idle");
+      return;
+    }
+
+    // If loading, ignore
+    if (status === "loading") return;
+
+    setStatus("loading");
+    try {
+      const audio = await speakWithElevenLabs(text);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setStatus("idle");
+        URL.revokeObjectURL(audio.src);
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        setStatus("idle");
+        audioRef.current = null;
+      };
+      await audio.play();
+      setStatus("playing");
+    } catch (e) {
+      console.error("TTS error:", e);
+      setStatus("idle");
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+    };
+  }, []);
+
+  return (
+    <button
+      className={`tts-btn ${status === "playing" ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
+      onClick={handleClick}
+      title={
+        status === "playing" ? "Stop audio"
+        : status === "loading" ? "Loading audio…"
+        : "Listen to this message"
+      }
+      type="button"
+    >
+      {status === "loading" && (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
+          <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+        </svg>
+      )}
+      {status === "playing" && (
+        <>
+          <WaveformIcon />
+          <span>Stop</span>
+        </>
+      )}
+      {status === "idle" && (
+        <>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span>Listen</span>
+        </>
+      )}
+    </button>
+  );
+}
+
+function WaveformIcon() {
+  return (
+    <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
+      {[3, 8, 13, 18, 23].map((x, i) => (
+        <rect
+          key={x}
+          x={x}
+          y={i % 2 === 0 ? 4 : 0}
+          width="3"
+          height={i % 2 === 0 ? 12 : 20}
+          rx="1.5"
+          style={{
+            animation: "waveBar 0.9s ease-in-out infinite",
+            animationDelay: `${i * 0.12}s`,
+            transformOrigin: "center",
+          }}
+        />
+      ))}
+    </svg>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === "user";
   return (
@@ -86,9 +195,17 @@ function ChatMessage({ message }: { message: Message }) {
           </svg>
         </div>
       )}
-      <div className={`bubble ${isUser ? "user-bubble" : "ai-bubble"}`}>
-        <p>{message.content}</p>
-        <time>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+      <div className="bubble-col">
+        <div className={`bubble ${isUser ? "user-bubble" : "ai-bubble"}`}>
+          <p>{message.content}</p>
+          <time>{message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+        </div>
+        {!isUser && (
+          <div className="tts-row">
+            <TTSButton text={message.content} />
+            <span className="tts-label">ElevenLabs TTS</span>
+          </div>
+        )}
       </div>
       {isUser && (
         <div className="user-avatar">
@@ -143,9 +260,7 @@ export default function ChatPage() {
       });
       if (!response.ok) throw new Error("Failed to get response");
       let data;
-      try { 
-        data = await response.json(); 
-      } catch { throw new Error("Invalid response format"); }
+      try { data = await response.json(); } catch { throw new Error("Invalid response format"); }
       if (!data?.content) throw new Error("Invalid response format");
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -195,7 +310,6 @@ export default function ChatPage() {
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-          /* Blue palette */
           --blue:        #4a90d9;
           --blue-dark:   #2563a8;
           --blue-deeper: #1a4a80;
@@ -203,13 +317,9 @@ export default function ChatPage() {
           --blue-soft:   #eff6ff;
           --blue-mid:    #bfdbfe;
           --blue-glow:   rgba(74,144,217,0.25);
-
-          /* Accent for voice/error */
           --coral:       #f87171;
           --coral-light: #fff5f5;
           --amber:       #fbbf24;
-
-          /* Neutrals */
           --bg:          #f0f6ff;
           --white:       #ffffff;
           --text:        #1e3a5f;
@@ -232,14 +342,12 @@ export default function ChatPage() {
             radial-gradient(ellipse 45% 45% at 5%  95%, rgba(74,144,217,0.08) 0%, transparent 60%);
         }
 
-        /* ── Page layout ── */
         .page-wrap {
           display: grid;
           grid-template-rows: 64px 1fr;
           height: 100vh;
         }
 
-        /* ── Top nav ── */
         .topnav {
           background: var(--white);
           border-bottom: 1px solid var(--border);
@@ -280,12 +388,7 @@ export default function ChatPage() {
 
         .brand-name span { color: var(--blue); }
 
-        .nav-divider {
-          width: 1px;
-          height: 24px;
-          background: var(--border);
-          margin: 0 4px;
-        }
+        .nav-divider { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
 
         .nav-badge {
           display: flex;
@@ -341,13 +444,8 @@ export default function ChatPage() {
           box-shadow: 0 2px 8px var(--blue-glow);
         }
 
-        .nav-user-name {
-          font-size: 0.85rem;
-          font-weight: 600;
-          color: var(--text);
-        }
+        .nav-user-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
 
-        /* ── Main chat ── */
         .main {
           display: flex;
           flex-direction: column;
@@ -358,7 +456,6 @@ export default function ChatPage() {
           padding: 0 24px;
         }
 
-        /* Chat subheader */
         .chat-subheader {
           padding: 18px 0 14px;
           display: flex;
@@ -380,23 +477,10 @@ export default function ChatPage() {
           flex-shrink: 0;
         }
 
-        .chat-subheader-text h2 {
-          font-size: 0.98rem;
-          font-weight: 700;
-          color: var(--text);
-        }
+        .chat-subheader-text h2 { font-size: 0.98rem; font-weight: 700; color: var(--text); }
+        .chat-subheader-text p  { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
 
-        .chat-subheader-text p {
-          font-size: 0.74rem;
-          color: var(--text-soft);
-          margin-top: 2px;
-        }
-
-        .subheader-chips {
-          margin-left: auto;
-          display: flex;
-          gap: 8px;
-        }
+        .subheader-chips { margin-left: auto; display: flex; gap: 8px; }
 
         .chip {
           font-size: 0.71rem;
@@ -407,19 +491,9 @@ export default function ChatPage() {
           white-space: nowrap;
         }
 
-        .chip-blue  {
-          color: var(--blue-dark);
-          background: var(--blue-soft);
-          border-color: var(--blue-mid);
-        }
+        .chip-blue  { color: var(--blue-dark); background: var(--blue-soft); border-color: var(--blue-mid); }
+        .chip-coral { color: #b91c1c; background: var(--coral-light); border-color: #fca5a5; }
 
-        .chip-coral {
-          color: #b91c1c;
-          background: var(--coral-light);
-          border-color: #fca5a5;
-        }
-
-        /* ── Messages ── */
         .messages-area {
           flex: 1;
           overflow-y: auto;
@@ -476,7 +550,6 @@ export default function ChatPage() {
         }
 
         .bubble {
-          max-width: 62%;
           padding: 12px 16px;
           border-radius: 20px;
           font-size: 0.9rem;
@@ -509,7 +582,85 @@ export default function ChatPage() {
 
         .user-bubble time { color: rgba(255,255,255,0.65); }
 
-        /* Typing dots */
+        /* ── TTS row — sits BELOW the bubble ── */
+        .bubble-col {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          max-width: 62%;
+        }
+
+        .tts-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding-left: 4px;
+        }
+
+        .tts-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 0.76rem;
+          font-weight: 600;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          padding: 6px 14px 6px 11px;
+          border-radius: 20px;
+          border: 1.5px solid var(--blue-mid);
+          background: var(--white);
+          color: var(--blue-dark);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+          box-shadow: 0 1px 4px rgba(37,99,168,0.10);
+        }
+
+        .tts-btn:hover {
+          background: var(--blue-soft);
+          border-color: var(--blue);
+          transform: translateY(-1px);
+          box-shadow: 0 3px 10px rgba(74,144,217,0.2);
+        }
+
+        .tts-btn.tts-playing {
+          background: #f0fdf4;
+          border-color: #86efac;
+          color: #166534;
+          animation: ttsGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes ttsGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,172,0.4); }
+          50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
+        }
+
+        .tts-btn.tts-loading {
+          opacity: 0.7;
+          cursor: wait;
+        }
+
+        /* Waveform bar animation */
+        @keyframes waveBar {
+          0%, 100% { transform: scaleY(0.35); }
+          50%       { transform: scaleY(1); }
+        }
+
+        /* Spinner */
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+
+        .spin {
+          animation: spin 0.7s linear infinite;
+        }
+
+        .tts-label {
+          font-size: 0.64rem;
+          color: var(--text-soft);
+          letter-spacing: 0.02em;
+        }
+
+        /* ── Typing dots ── */
         .typing-bubble {
           display: flex;
           align-items: center;
@@ -534,10 +685,7 @@ export default function ChatPage() {
         }
 
         /* ── Input ── */
-        .input-area {
-          padding: 14px 0 22px;
-          flex-shrink: 0;
-        }
+        .input-area { padding: 14px 0 22px; flex-shrink: 0; }
 
         .error-msg {
           font-size: 0.78rem;
@@ -587,12 +735,7 @@ export default function ChatPage() {
 
         textarea::placeholder { color: var(--text-soft); }
 
-        .input-actions {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          flex-shrink: 0;
-        }
+        .input-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
         .icon-btn {
           width: 38px;
@@ -657,7 +800,6 @@ export default function ChatPage() {
         }
         .powered-by span { color: var(--blue-dark); font-weight: 600; }
 
-        /* ── Responsive ── */
         @media (max-width: 768px) {
           .topnav { padding: 0 16px; }
           .main { padding: 0 16px; }
@@ -674,7 +816,6 @@ export default function ChatPage() {
 
       <div className="page-wrap">
 
-        {/* ── Top nav ── */}
         <nav className="topnav">
           <div className="brand">
             <div className="brand-icon">
@@ -701,10 +842,7 @@ export default function ChatPage() {
           </div>
         </nav>
 
-        {/* ── Main ── */}
         <main className="main">
-
-          {/* Chat subheader */}
           <div className="chat-subheader">
             <div className="ai-avatar-lg">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -722,7 +860,6 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Messages */}
           <div className="messages-area">
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
@@ -731,7 +868,6 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="input-area">
             {error && (
               <p className="error-msg">
@@ -787,7 +923,7 @@ export default function ChatPage() {
             </div>
             <div className="input-footer">
               <span className="input-hint">Enter to send · Shift+Enter for new line</span>
-              <span className="powered-by">Powered by <span>Gemini</span></span>
+              <span className="powered-by">Powered by <span>Gemini</span> &amp; <span>ElevenLabs</span></span>
             </div>
           </div>
         </main>
