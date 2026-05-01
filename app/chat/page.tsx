@@ -356,6 +356,16 @@ export default function ChatPage() {
           gap: 16px;
           box-shadow: var(--shadow-sm);
           z-index: 20;
+          href="/books"
+          style={{
+            fontSize: '0.82rem', fontWeight: 600,
+            color: '#2563a8', textDecoration: 'none',
+            padding: '6px 14px', borderRadius: '20px',
+            background: '#eff6ff', border: '1.5px solid #bfdbfe',
+          }}
+        >
+          📚 Books
+        </a>
         }
 
         .brand {
