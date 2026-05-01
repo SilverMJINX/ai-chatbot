@@ -1,5 +1,5 @@
-'use client';
-import { useState, useEffect } from 'react';
+"use client";
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useElevenLabsTTS } from '@/hooks/useElevenLabsTTS';
 
 interface Book {
@@ -9,59 +9,135 @@ interface Book {
   formats: Record<string, string>;
 }
 
-// Reuse your TTSButton pattern — adapted for the reader
-function ReaderTTSButton({ text }: { text: string }) {
-  const { speak, stop, status } = useElevenLabsTTS();
-  return (
-    <button
-      className={`tts-btn ${status === 'playing' ? 'tts-playing' : ''} ${status === 'loading' ? 'tts-loading' : ''}`}
-      onClick={() => status === 'playing' ? stop() : speak(text)}
-      type="button"
-    >
-      {status === 'idle'    && <span>▶ Listen to Chapter</span>}
-      {status === 'loading' && <span>Loading…</span>}
-      {status === 'playing' && <span>⏹ Stop</span>}
-    </button>
-  );
-}
-
-// Split text into rough "chapters" by double newlines / chapter headings
 function splitChapters(text: string): string[] {
   return text
     .split(/\n{3,}|(?=\bCHAPTER\b)/i)
     .map(c => c.trim())
-    .filter(c => c.length > 200); // skip stubs
+    .filter(c => c.length > 200);
 }
 
-export function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
-  const [text, setText]       = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
-  const [chapter, setChapter] = useState(0);
+function splitLines(section: string): string[] {
+  return section
+    .split(/\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+}
 
+const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
+// ms per line at 1× speed
+const BASE_INTERVAL = 2800;
+
+export function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
+  const [text, setText]         = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [chapter, setChapter]   = useState(0);
+  const [lineIdx, setLineIdx]   = useState(0);
+  const [playing, setPlaying]   = useState(false);
+  const [speed, setSpeed]       = useState<number>(1);
+
+  const { speak, stop, status } = useElevenLabsTTS();
+  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lineRefs  = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Fetch text
   useEffect(() => {
     setLoading(true);
+    setError('');
     fetch(`/api/books/${book.id}/text`)
       .then(r => r.ok ? r.text() : Promise.reject('unavailable'))
       .then(t => setText(t))
       .catch(() => setError('Full text unavailable for this book.'))
       .finally(() => setLoading(false));
+    return () => { stop(); clearInterval(timerRef.current!); };
   }, [book.id]);
 
   const chapters = splitChapters(text);
-  const current  = chapters[chapter] ?? '';
+  const lines    = splitLines(chapters[chapter] ?? '');
+  const total    = lines.length;
+  const progress = total > 0 ? ((lineIdx + 1) / total) * 100 : 0;
+
+  // Reset on chapter change
+  useEffect(() => {
+    stop();
+    setPlaying(false);
+    setLineIdx(0);
+    clearInterval(timerRef.current!);
+  }, [chapter]);
+
+  // Scroll active line into view 
+  useEffect(() => {
+    lineRefs.current[lineIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [lineIdx]);
+
+  // Speak active line whenever it changes while playing
+  useEffect(() => {
+    if (playing && lines[lineIdx]) speak(lines[lineIdx]);
+  }, [lineIdx, playing]);
+
+  // Auto-advance timer 
+  const startTimer = useCallback(() => {
+    clearInterval(timerRef.current!);
+    timerRef.current = setInterval(() => {
+      setLineIdx(prev => {
+        if (prev >= total - 1) {
+          setPlaying(false);
+          clearInterval(timerRef.current!);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, BASE_INTERVAL / speed);
+  }, [speed, total]);
+
+  useEffect(() => {
+    if (playing) startTimer();
+    else clearInterval(timerRef.current!);
+    return () => clearInterval(timerRef.current!);
+  }, [playing, startTimer]);
+
+  //  Controls 
+  const togglePlay = () => {
+    if (playing) { stop(); setPlaying(false); }
+    else { setPlaying(true); }
+  };
+
+  const skipLines = (n: number) => {
+    clearInterval(timerRef.current!);
+    setLineIdx(prev => Math.max(0, Math.min(total - 1, prev + n)));
+    if (playing) startTimer();
+  };
+
+  const jumpToLine = (i: number) => {
+    clearInterval(timerRef.current!);
+    setLineIdx(i);
+    if (playing) { speak(lines[i]); startTimer(); }
+  };
+
+  const changeSpeed = (s: number) => {
+    setSpeed(s);
+    if (playing) {
+      clearInterval(timerRef.current!);
+      timerRef.current = setInterval(() => {
+        setLineIdx(prev => {
+          if (prev >= total - 1) { setPlaying(false); clearInterval(timerRef.current!); return prev; }
+          return prev + 1;
+        });
+      }, BASE_INTERVAL / s);
+    }
+  };
 
   return (
     <div className="reader-overlay" onClick={onClose}>
       <div className="reader-panel" onClick={e => e.stopPropagation()}>
+
+        {/* ── Header ── */}
         <div className="reader-header">
           <div>
             <h2 className="reader-title">{book.title}</h2>
-            <p className="reader-author">
-              {book.authors.map(a => a.name).join(', ')}
-            </p>
+            <p className="reader-author">{book.authors.map(a => a.name).join(', ')}</p>
           </div>
-          <button className="icon-btn" onClick={onClose} title="Close">✕</button>
+          <button className="icon-btn" onClick={onClose} title="Close" type="button">✕</button>
         </div>
 
         {loading && <p className="reader-status">Loading text…</p>}
@@ -69,27 +145,110 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
 
         {!loading && !error && (
           <>
+            {/* ── Controls bar ── */}
             <div className="reader-tts-bar">
-              <ReaderTTSButton text={current} />
-              <span className="tts-label">
-                Section {chapter + 1} of {chapters.length}
-              </span>
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+
+              {/* Progress */}
+              <div className="reader-progress-row">
+                <div className="reader-progress-track">
+                  <div className="reader-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <span className="tts-label" style={{ whiteSpace: 'nowrap' }}>
+                  {lineIdx + 1} / {total}
+                </span>
+              </div>
+
+              {/* Playback */}
+              <div className="reader-btn-row">
                 <button
-                  className="chip chip-blue"
+                  className="chip chip-blue reader-ctrl-btn"
+                  onClick={() => skipLines(-5)}
+                  title="Back 5 lines"
+                  type="button"
+                >⏮ 5</button>
+
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
+                  onClick={() => skipLines(-1)}
+                  title="Previous line"
+                  type="button"
+                >‹ 1</button>
+
+                <button
+                  className={`tts-btn ${playing ? 'tts-playing' : ''} ${status === 'loading' ? 'tts-loading' : ''}`}
+                  onClick={togglePlay}
+                  type="button"
+                  style={{ minWidth: 82 }}
+                >
+                  {status === 'loading' && <span>Loading…</span>}
+                  {status !== 'loading' && (playing
+                    ? <><span style={{ fontSize: 11 }}>⏸</span><span>Pause</span></>
+                    : <><span style={{ fontSize: 11 }}>▶</span><span>Play</span></>
+                  )}
+                </button>
+
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
+                  onClick={() => skipLines(1)}
+                  title="Next line"
+                  type="button"
+                >1 ›</button>
+
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
+                  onClick={() => skipLines(5)}
+                  title="Skip 5 lines"
+                  type="button"
+                >5 ⏭</button>
+
+                <div style={{ flex: 1 }} />
+
+                {/* Speed */}
+                <span className="tts-label">Speed:</span>
+                {SPEED_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    className={`chip reader-ctrl-btn ${speed === s ? 'chip-speed-active' : 'chip-blue'}`}
+                    onClick={() => changeSpeed(s)}
+                    type="button"
+                  >{s}×</button>
+                ))}
+              </div>
+
+              {/* Chapter nav */}
+              <div className="reader-btn-row">
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
                   disabled={chapter === 0}
                   onClick={() => setChapter(c => c - 1)}
-                >← Prev</button>
+                  type="button"
+                >← Prev chapter</button>
+                <span className="tts-label">
+                  Chapter {chapter + 1} of {chapters.length}
+                </span>
                 <button
-                  className="chip chip-blue"
+                  className="chip chip-blue reader-ctrl-btn"
                   disabled={chapter >= chapters.length - 1}
                   onClick={() => setChapter(c => c + 1)}
-                >Next →</button>
+                  type="button"
+                >Next chapter →</button>
+                <div style={{ flex: 1 }} />
+                <span className="tts-label" style={{ opacity: 0.6 }}>ElevenLabs TTS</span>
               </div>
             </div>
 
+            {/* ── Line-by-line body ── */}
             <div className="reader-body">
-              <pre className="reader-text">{current}</pre>
+              {lines.map((line, i) => (
+                <div
+                  key={i}
+                  ref={el => { lineRefs.current[i] = el; }}
+                  className={`reader-line${i === lineIdx ? ' reader-line-active' : ''}`}
+                  onClick={() => jumpToLine(i)}
+                >
+                  {line}
+                </div>
+              ))}
             </div>
           </>
         )}
