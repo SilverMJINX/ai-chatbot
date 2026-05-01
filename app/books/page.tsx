@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 
 const USERNAME = "Admin";
@@ -14,57 +14,136 @@ interface Book {
   download_count: number;
 }
 
-function WaveformIcon() {
-  return (
-    <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
-      {[3, 8, 13, 18, 23].map((x, i) => (
-        <rect
-          key={x}
-          x={x}
-          y={i % 2 === 0 ? 4 : 0}
-          width="3"
-          height={i % 2 === 0 ? 12 : 20}
-          rx="1.5"
-          style={{
-            animation: "waveBar 0.9s ease-in-out infinite",
-            animationDelay: `${i * 0.12}s`,
-            transformOrigin: "center",
-          }}
-        />
-      ))}
-    </svg>
-  );
+// Helpers 
+
+function splitChapters(text: string): string[] {
+  const chunks = text
+    .split(/(?=\bCHAPTER\s+[IVXLCDM\d]+\b)/i)
+    .map(c => c.trim())
+    .filter(Boolean);
+  return chunks.length > 1 ? chunks : [text.trim()];
 }
 
+function splitLines(section: string): string[] {
+  return section
+    .split(/\n+/)
+    .map(l => l.trim())
+    .filter(l => l.length > 20);
+}
+
+const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
+const BASE_INTERVAL = 2800;
+
+// BookReader 
+
 function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
-  const [text, setText] = useState("");
+  const [text, setText]       = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [section, setSection] = useState(0);
+  const [error, setError]     = useState("");
+  const [chapter, setChapter] = useState(0);
+  const [lineIdx, setLineIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed]     = useState<number>(1);
+
   const { speak, stop, status } = useElevenLabsTTS();
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const sections = text
-    .split(/\n{3,}/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 100);
-
-  const current = sections[section] ?? "";
-
+  // Fetch text
   useEffect(() => {
     setLoading(true);
     setError("");
     fetch(`/api/books/${book.id}/text`)
-      .then((r) => (r.ok ? r.text() : Promise.reject()))
-      .then((t) => setText(t))
+      .then(r => r.ok ? r.text() : Promise.reject("unavailable"))
+      .then(t => {
+        console.log("text bytes:", t.length, "| chapters:", splitChapters(t).length);
+        setText(t);
+      })
       .catch(() => setError("Full text unavailable for this book."))
       .finally(() => setLoading(false));
-    return () => stop();
+    return () => { clearInterval(timerRef.current!); };
   }, [book.id]);
+
+  const chapters = splitChapters(text);
+  const lines    = splitLines(chapters[chapter] ?? "");
+  const total    = lines.length;
+  const progress = total > 0 ? ((lineIdx + 1) / total) * 100 : 0;
+
+  // Reset on chapter change
+  useEffect(() => {
+    stop();
+    setPlaying(false);
+    setLineIdx(0);
+    clearInterval(timerRef.current!);
+  }, [chapter]);
+
+  // Scroll active line into view
+  useEffect(() => {
+    lineRefs.current[lineIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [lineIdx]);
+
+  // Speak active line when it changes while playing
+  useEffect(() => {
+    if (playing && lines[lineIdx]) speak(lines[lineIdx]);
+  }, [lineIdx, playing]);
+
+  // Auto-advance timer
+  const startTimer = useCallback(() => {
+    clearInterval(timerRef.current!);
+    timerRef.current = setInterval(() => {
+      setLineIdx(prev => {
+        if (prev >= total - 1) {
+          setPlaying(false);
+          clearInterval(timerRef.current!);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, BASE_INTERVAL / speed);
+  }, [speed, total]);
+
+  useEffect(() => {
+    if (playing) startTimer();
+    else clearInterval(timerRef.current!);
+    return () => clearInterval(timerRef.current!);
+  }, [playing, startTimer]);
+
+  // Controls
+  const togglePlay = () => {
+    if (playing) { stop(); setPlaying(false); }
+    else { setPlaying(true); }
+  };
+
+  const skipLines = (n: number) => {
+    clearInterval(timerRef.current!);
+    setLineIdx(prev => Math.max(0, Math.min(total - 1, prev + n)));
+    if (playing) startTimer();
+  };
+
+  const jumpToLine = (i: number) => {
+    clearInterval(timerRef.current!);
+    setLineIdx(i);
+    if (playing) { speak(lines[i]); startTimer(); }
+  };
+
+  const changeSpeed = (s: number) => {
+    setSpeed(s);
+    if (playing) {
+      clearInterval(timerRef.current!);
+      timerRef.current = setInterval(() => {
+        setLineIdx(prev => {
+          if (prev >= total - 1) { setPlaying(false); clearInterval(timerRef.current!); return prev; }
+          return prev + 1;
+        });
+      }, BASE_INTERVAL / s);
+    }
+  };
 
   return (
     <div className="reader-overlay" onClick={onClose}>
-      <div className="reader-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Reader Header */}
+      <div className="reader-panel" onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="reader-header">
           <div className="reader-header-left">
             <div className="ai-avatar-lg">
@@ -76,7 +155,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
             <div>
               <h2 className="reader-title">{book.title}</h2>
               <p className="reader-author">
-                {book.authors.map((a) => a.name).join(", ") || "Unknown author"}
+                {book.authors.map(a => a.name).join(", ") || "Unknown author"}
               </p>
             </div>
           </div>
@@ -88,73 +167,115 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
           </button>
         </div>
 
-        {/* TTS Controls */}
-        {!loading && !error && sections.length > 0 && (
-          <div className="reader-controls">
-            <button
-              className={`tts-btn ${status === "playing" ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
-              onClick={() => (status === "playing" ? stop() : speak(current))}
-              type="button"
-            >
-              {status === "loading" && (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
-                  <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
-                </svg>
-              )}
-              {status === "playing" && <><WaveformIcon /><span>Stop</span></>}
-              {status === "idle" && (
-                <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>
-              )}
-            </button>
-            <span className="tts-label">ElevenLabs TTS</span>
-
-            <div className="reader-nav">
-              <button
-                className="chip chip-blue reader-nav-btn"
-                disabled={section === 0}
-                onClick={() => { stop(); setSection((s) => s - 1); }}
-                type="button"
-              >
-                ← Prev
-              </button>
-              <span className="reader-section-label">
-                Part {section + 1} of {sections.length}
-              </span>
-              <button
-                className="chip chip-blue reader-nav-btn"
-                disabled={section >= sections.length - 1}
-                onClick={() => { stop(); setSection((s) => s + 1); }}
-                type="button"
-              >
-                Next →
-              </button>
+        {loading && (
+          <div className="reader-status">
+            <div className="typing-bubble" style={{ justifyContent: "center" }}>
+              <span className="dot"/><span className="dot"/><span className="dot"/>
             </div>
+            <p style={{ marginTop: 12 }}>Loading book text…</p>
           </div>
         )}
+        {error && <p className="reader-status reader-error">{error}</p>}
 
-        {/* Reader Body */}
-        <div className="reader-body">
-          {loading && (
-            <div className="reader-status">
-              <div className="typing-bubble" style={{ justifyContent: "center" }}>
-                <span className="dot"/><span className="dot"/><span className="dot"/>
+        {!loading && !error && (
+          <>
+            {/* Controls */}
+            <div className="reader-tts-bar">
+
+              {/* Progress bar */}
+              <div className="reader-progress-row">
+                <div className="reader-progress-track">
+                  <div className="reader-progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <span className="tts-label" style={{ whiteSpace: "nowrap" }}>
+                  {lineIdx + 1} / {total}
+                </span>
               </div>
-              <p style={{ marginTop: 12 }}>Loading book text…</p>
+
+              {/* Playback */}
+              <div className="reader-btn-row">
+                <button className="chip chip-blue reader-ctrl-btn" onClick={() => skipLines(-5)} title="Back 5 lines" type="button">⏮ 5</button>
+                <button className="chip chip-blue reader-ctrl-btn" onClick={() => skipLines(-1)} title="Previous line" type="button">‹ 1</button>
+
+                <button
+                  className={`tts-btn ${playing ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
+                  onClick={togglePlay}
+                  type="button"
+                  style={{ minWidth: 82 }}
+                >
+                  {status === "loading" && <span>Loading…</span>}
+                  {status !== "loading" && (playing
+                    ? <><span>⏸</span><span>Pause</span></>
+                    : <><span>▶</span><span>Play</span></>
+                  )}
+                </button>
+
+                <button className="chip chip-blue reader-ctrl-btn" onClick={() => skipLines(1)} title="Next line" type="button">1 ›</button>
+                <button className="chip chip-blue reader-ctrl-btn" onClick={() => skipLines(5)} title="Skip 5 lines" type="button">5 ⏭</button>
+
+                <div style={{ flex: 1 }} />
+
+                <span className="tts-label">Speed:</span>
+                {SPEED_OPTIONS.map(s => (
+                  <button
+                    key={s}
+                    className={`chip reader-ctrl-btn ${speed === s ? "chip-speed-active" : "chip-blue"}`}
+                    onClick={() => changeSpeed(s)}
+                    type="button"
+                  >{s}×</button>
+                ))}
+              </div>
+
+              {/* Chapter nav */}
+              <div className="reader-btn-row">
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
+                  disabled={chapter === 0}
+                  onClick={() => setChapter(c => c - 1)}
+                  type="button"
+                >← Prev chapter</button>
+                <span className="tts-label">Chapter {chapter + 1} of {chapters.length}</span>
+                <button
+                  className="chip chip-blue reader-ctrl-btn"
+                  disabled={chapter >= chapters.length - 1}
+                  onClick={() => setChapter(c => c + 1)}
+                  type="button"
+                >Next chapter →</button>
+                <div style={{ flex: 1 }} />
+                <span className="tts-label" style={{ opacity: 0.6 }}>ElevenLabs TTS</span>
+              </div>
             </div>
-          )}
-          {error && <p className="reader-status reader-error">{error}</p>}
-          {!loading && !error && (
-            <pre className="reader-text">{current}</pre>
-          )}
-        </div>
+
+            {/* Line-by-line body */}
+            <div className="reader-body">
+              {lines.length === 0 && (
+                <p style={{ color: "#b91c1c", fontSize: 13 }}>
+                  No lines found — text length: {text.length}, chapters: {chapters.length}
+                </p>
+              )}
+              {lines.map((line, i) => (
+                <div
+                  key={i}
+                  ref={el => { lineRefs.current[i] = el; }}
+                  className={`reader-line${i === lineIdx ? " reader-line-active" : ""}`}
+                  onClick={() => jumpToLine(i)}
+                >
+                  {line}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
+// BooksPage 
+
 export default function BooksPage() {
-  const [query, setQuery] = useState("");
-  const [books, setBooks] = useState<Book[]>([]);
+  const [query, setQuery]     = useState("");
+  const [books, setBooks]     = useState<Book[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<Book | null>(null);
@@ -219,34 +340,24 @@ export default function BooksPage() {
           min-height: 100vh;
         }
 
-        /* ── Nav (identical to chat page) ── */
         .topnav {
           background: var(--white);
           border-bottom: 1px solid var(--border);
-          display: flex;
-          align-items: center;
-          padding: 0 32px;
-          gap: 16px;
-          box-shadow: var(--shadow-sm);
-          z-index: 20;
+          display: flex; align-items: center;
+          padding: 0 32px; gap: 16px;
+          box-shadow: var(--shadow-sm); z-index: 20;
         }
 
         .brand {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          text-decoration: none;
-          flex-shrink: 0;
+          display: flex; align-items: center; gap: 10px;
+          text-decoration: none; flex-shrink: 0;
         }
-
         .brand-icon {
-          width: 36px; height: 36px;
-          border-radius: 12px;
+          width: 36px; height: 36px; border-radius: 12px;
           background: linear-gradient(135deg, var(--blue), #6baee8);
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 4px 12px var(--blue-glow);
         }
-
         .brand-name {
           font-family: 'Fraunces', Georgia, serif;
           font-size: 1.3rem; font-weight: 600;
@@ -273,7 +384,6 @@ export default function BooksPage() {
           box-shadow: 0 2px 8px var(--blue-glow);
           white-space: nowrap;
         }
-
         .nav-chat-link {
           font-size: 0.82rem; font-weight: 600;
           color: var(--blue-dark); text-decoration: none;
@@ -292,7 +402,6 @@ export default function BooksPage() {
           cursor: pointer; transition: background 0.15s;
         }
         .nav-user:hover { background: var(--bg); }
-
         .nav-user-avatar {
           width: 32px; height: 32px; border-radius: 50%;
           background: linear-gradient(135deg, var(--blue), #6baee8);
@@ -300,10 +409,8 @@ export default function BooksPage() {
           font-size: 0.78rem; font-weight: 700; color: white;
           box-shadow: 0 2px 8px var(--blue-glow);
         }
-
         .nav-user-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
 
-        /* ── Page content ── */
         .books-main {
           max-width: 900px; width: 100%;
           margin: 0 auto; padding: 36px 24px;
@@ -316,17 +423,14 @@ export default function BooksPage() {
           border-bottom: 1px solid var(--border);
           margin-bottom: 28px;
         }
-
         .ai-avatar-lg {
           width: 46px; height: 46px; border-radius: 14px;
           background: linear-gradient(135deg, var(--blue), #6baee8);
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0;
         }
-
         .books-subheader-text h2 { font-size: 0.98rem; font-weight: 700; color: var(--text); }
         .books-subheader-text p  { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
-
         .subheader-chips { margin-left: auto; display: flex; gap: 8px; }
 
         .chip {
@@ -336,8 +440,11 @@ export default function BooksPage() {
         }
         .chip-blue  { color: var(--blue-dark); background: var(--blue-soft); border-color: var(--blue-mid); }
         .chip-coral { color: #b91c1c; background: var(--coral-light); border-color: #fca5a5; }
+        .chip-speed-active {
+          color: var(--blue-dark); background: var(--blue-light);
+          border-color: var(--blue); font-weight: 700;
+        }
 
-        /* ── Search bar (matches input-wrapper) ── */
         .search-wrapper {
           display: flex; align-items: center; gap: 10px;
           background: var(--white);
@@ -352,7 +459,6 @@ export default function BooksPage() {
           border-color: var(--blue);
           box-shadow: 0 0 0 4px rgba(74,144,217,0.12);
         }
-
         .search-input {
           flex: 1; border: none; outline: none;
           background: transparent;
@@ -368,7 +474,6 @@ export default function BooksPage() {
           display: flex; align-items: center; justify-content: center;
           transition: all 0.18s; flex-shrink: 0;
         }
-
         .send-btn {
           background: linear-gradient(135deg, var(--blue), #6baee8);
           color: white; box-shadow: 0 4px 14px var(--blue-glow);
@@ -379,68 +484,46 @@ export default function BooksPage() {
           box-shadow: none; cursor: not-allowed; transform: none;
         }
 
-        /* ── Book grid ── */
         .books-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: 16px;
         }
-
         .book-card {
           background: var(--white);
           border: 1px solid var(--border);
-          border-radius: 20px;
-          padding: 18px;
-          cursor: pointer;
-          transition: all 0.18s;
+          border-radius: 20px; padding: 18px;
+          cursor: pointer; transition: all 0.18s;
           box-shadow: var(--shadow-sm);
           animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1);
         }
         .book-card:hover {
-          border-color: var(--blue);
-          transform: translateY(-2px);
+          border-color: var(--blue); transform: translateY(-2px);
           box-shadow: 0 6px 20px rgba(74,144,217,0.15);
         }
-
         .book-card-title {
           font-size: 0.88rem; font-weight: 700;
-          color: var(--text); margin-bottom: 5px;
-          line-height: 1.4;
+          color: var(--text); margin-bottom: 5px; line-height: 1.4;
           display: -webkit-box; -webkit-line-clamp: 2;
           -webkit-box-orient: vertical; overflow: hidden;
         }
-
         .book-card-author {
-          font-size: 0.74rem; color: var(--text-soft);
-          margin-bottom: 14px;
+          font-size: 0.74rem; color: var(--text-soft); margin-bottom: 14px;
           display: -webkit-box; -webkit-line-clamp: 1;
           -webkit-box-orient: vertical; overflow: hidden;
         }
-
         .book-card-footer {
-          display: flex; align-items: center;
-          justify-content: space-between;
+          display: flex; align-items: center; justify-content: space-between;
         }
+        .book-card-downloads { font-size: 0.68rem; color: var(--text-soft); }
 
-        .book-card-downloads {
-          font-size: 0.68rem; color: var(--text-soft);
-        }
-
-        /* ── Empty / loading states ── */
         .empty-state {
           text-align: center; padding: 60px 0;
           color: var(--text-soft); font-size: 0.9rem;
         }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
 
-        .empty-icon {
-          font-size: 2.5rem; margin-bottom: 12px;
-        }
-
-        /* ── Dots (reused from chat) ── */
-        .typing-bubble {
-          display: flex; align-items: center; gap: 5px;
-        }
-
+        .typing-bubble { display: flex; align-items: center; gap: 5px; }
         .dot {
           width: 7px; height: 7px; border-radius: 50%;
           background: var(--blue); display: inline-block;
@@ -449,17 +532,6 @@ export default function BooksPage() {
         .dot:nth-child(2) { animation-delay: 0.15s; }
         .dot:nth-child(3) { animation-delay: 0.3s; }
 
-        @keyframes bounce {
-          0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
-          30% { transform: translateY(-7px); opacity: 1; }
-        }
-
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-
-        /* ── TTS button (identical to chat page) ── */
         .tts-btn {
           display: inline-flex; align-items: center; gap: 6px;
           font-size: 0.76rem; font-weight: 600;
@@ -481,23 +553,9 @@ export default function BooksPage() {
           animation: ttsGlow 2s ease-in-out infinite;
         }
         .tts-btn.tts-loading { opacity: 0.7; cursor: wait; }
-
         .tts-label { font-size: 0.64rem; color: var(--text-soft); letter-spacing: 0.02em; }
 
-        @keyframes ttsGlow {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,172,0.4); }
-          50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
-        }
-
-        @keyframes waveBar {
-          0%, 100% { transform: scaleY(0.35); }
-          50%       { transform: scaleY(1); }
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .spin { animation: spin 0.7s linear infinite; }
-
-        /* ── Reader modal ── */
+        /* Reader modal */
         .reader-overlay {
           position: fixed; inset: 0;
           background: rgba(30,58,95,0.5);
@@ -507,18 +565,15 @@ export default function BooksPage() {
           padding: 24px;
           animation: fadeUp 0.2s ease;
         }
-
         .reader-panel {
           background: var(--white);
           border-radius: 20px;
-          width: 100%; max-width: 740px;
-          max-height: 88vh;
+          width: 100%; max-width: 740px; max-height: 88vh;
           display: flex; flex-direction: column;
           box-shadow: var(--shadow-md);
           overflow: hidden;
           border: 1px solid var(--border);
         }
-
         .reader-header {
           padding: 18px 20px;
           border-bottom: 1px solid var(--border);
@@ -526,23 +581,16 @@ export default function BooksPage() {
           justify-content: space-between; gap: 14px;
           flex-shrink: 0;
         }
-
         .reader-header-left {
-          display: flex; align-items: center; gap: 14px;
-          min-width: 0;
+          display: flex; align-items: center; gap: 14px; min-width: 0;
         }
-
         .reader-title {
           font-size: 0.95rem; font-weight: 700;
           color: var(--text); line-height: 1.3;
           display: -webkit-box; -webkit-line-clamp: 1;
           -webkit-box-orient: vertical; overflow: hidden;
         }
-
-        .reader-author {
-          font-size: 0.74rem; color: var(--text-soft); margin-top: 2px;
-        }
-
+        .reader-author { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
         .reader-close-btn {
           width: 34px; height: 34px; border-radius: 10px;
           border: 1.5px solid var(--border);
@@ -553,64 +601,77 @@ export default function BooksPage() {
         }
         .reader-close-btn:hover { background: var(--blue-light); border-color: var(--blue); color: var(--blue-dark); }
 
-        .reader-controls {
+        /* Controls bar */
+        .reader-tts-bar {
           padding: 12px 20px;
           border-bottom: 1px solid var(--border);
-          display: flex; align-items: center; gap: 12px;
-          flex-shrink: 0; flex-wrap: wrap;
+          display: flex; flex-direction: column; gap: 10px;
+          flex-shrink: 0;
         }
+        .reader-progress-row { display: flex; align-items: center; gap: 10px; }
+        .reader-progress-track {
+          flex: 1; height: 4px;
+          background: var(--blue-mid); border-radius: 2px; overflow: hidden;
+        }
+        .reader-progress-fill {
+          height: 100%; background: var(--blue);
+          border-radius: 2px; transition: width 0.35s ease;
+        }
+        .reader-btn-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .reader-ctrl-btn { cursor: pointer !important; }
+        .reader-ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed !important; }
 
-        .reader-nav {
-          margin-left: auto;
-          display: flex; align-items: center; gap: 8px;
-        }
-
-        .reader-nav-btn {
-          cursor: pointer !important;
-          transition: all 0.15s;
-        }
-        .reader-nav-btn:hover:not(:disabled) {
-          background: var(--blue-light) !important;
-          border-color: var(--blue) !important;
-        }
-        .reader-nav-btn:disabled {
-          opacity: 0.35; cursor: not-allowed !important;
-        }
-
-        .reader-section-label {
-          font-size: 0.72rem; color: var(--text-soft); white-space: nowrap;
-        }
-
-        .reader-body {
-          flex: 1; overflow-y: auto; padding: 28px 28px;
-        }
-
+        /* Line reader body */
+        .reader-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
         .reader-body::-webkit-scrollbar { width: 5px; }
         .reader-body::-webkit-scrollbar-track { background: transparent; }
         .reader-body::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
 
-        .reader-text {
-          white-space: pre-wrap; word-break: break-word;
+        .reader-line {
           font-family: 'Georgia', serif;
-          font-size: 0.97rem; line-height: 1.9;
-          color: var(--text);
+          font-size: 0.97rem; line-height: 1.85;
+          color: var(--text-mid);
+          padding: 3px 8px; margin: 0 -8px;
+          border-radius: 6px; cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+        }
+        .reader-line:hover { background: var(--blue-soft); color: var(--text); }
+        .reader-line-active {
+          color: var(--text) !important;
+          background: var(--blue-light) !important;
+          border-left: 2px solid var(--blue);
+          padding-left: 10px;
         }
 
         .reader-status {
           padding: 48px 0; text-align: center;
           color: var(--text-soft); font-size: 0.88rem;
         }
-
         .reader-error { color: #b91c1c; }
 
-        /* ── Responsive ── */
+        /* Animations */
+        @keyframes bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+          30% { transform: translateY(-7px); opacity: 1; }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes ttsGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,172,0.4); }
+          50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 0.7s linear infinite; }
+
+        /* Responsive */
         @media (max-width: 768px) {
           .topnav { padding: 0 16px; }
           .books-main { padding: 24px 16px; }
           .subheader-chips { display: none; }
           .reader-panel { max-height: 95vh; }
         }
-
         @media (max-width: 480px) {
           .brand-name { display: none; }
           .nav-badge { display: none; }
@@ -619,7 +680,6 @@ export default function BooksPage() {
       `}</style>
 
       <div className="page-wrap">
-        {/* Nav — matches chat page exactly */}
         <nav className="topnav">
           <div className="brand">
             <div className="brand-icon">
@@ -638,10 +698,7 @@ export default function BooksPage() {
             Book Library
           </div>
 
-          <a href="/chat" className="nav-chat-link">
-            💬 <span>Chat</span>
-          </a>
-
+          <a href="/chat" className="nav-chat-link">💬 <span>Chat</span></a>
           <span className="nav-books-link">📚 Books</span>
 
           <div className="nav-spacer" />
@@ -653,7 +710,6 @@ export default function BooksPage() {
         </nav>
 
         <main className="books-main">
-          {/* Subheader — mirrors chat subheader */}
           <div className="books-subheader">
             <div className="ai-avatar-lg">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
@@ -671,15 +727,14 @@ export default function BooksPage() {
             </div>
           </div>
 
-          {/* Search bar — matches input-wrapper style */}
           <div className="search-wrapper">
             <input
               ref={inputRef}
               className="search-input"
               placeholder="Search by title or author… e.g. Shakespeare, Frankenstein"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && search()}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && search()}
             />
             <button
               className="icon-btn send-btn"
@@ -701,7 +756,6 @@ export default function BooksPage() {
             </button>
           </div>
 
-          {/* States */}
           {!searched && (
             <div className="empty-state">
               <div className="empty-icon">📚</div>
@@ -716,22 +770,15 @@ export default function BooksPage() {
             </div>
           )}
 
-          {/* Book grid */}
           <div className="books-grid">
-            {books.map((book) => (
-              <div
-                key={book.id}
-                className="book-card"
-                onClick={() => setSelected(book)}
-              >
+            {books.map(book => (
+              <div key={book.id} className="book-card" onClick={() => setSelected(book)}>
                 <p className="book-card-title">{book.title}</p>
                 <p className="book-card-author">
-                  {book.authors.map((a) => a.name).join(", ") || "Unknown author"}
+                  {book.authors.map(a => a.name).join(", ") || "Unknown author"}
                 </p>
                 <div className="book-card-footer">
-                  <span className="chip chip-blue" style={{ fontSize: "0.67rem" }}>
-                    Read + Listen
-                  </span>
+                  <span className="chip chip-blue" style={{ fontSize: "0.67rem" }}>Read + Listen</span>
                   <span className="book-card-downloads">
                     {book.download_count?.toLocaleString() ?? "—"} downloads
                   </span>

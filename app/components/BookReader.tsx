@@ -144,11 +144,6 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
           <button className="icon-btn" onClick={onClose} title="Close" type="button">✕</button>
         </div>
 
-      // Debug info
-        <div style={{ background: 'red', color: 'white', padding: 8, fontSize: 12 }}>
-          loading:{String(loading)} | error:{error || 'none'} | text:{text.length} | lines:{lines.length}
-        </div>
-
         {loading && <p className="reader-status">Loading text…</p>}
         {error   && <p className="reader-status error">{error}</p>}
 
