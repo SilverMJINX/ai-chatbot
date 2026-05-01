@@ -77,10 +77,10 @@ function splitLines(section: string): string[] {
   });
 }
 
-const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
-const BASE_INTERVAL = 2800;
 
-// BookReader 
+const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
+
+// BookReader
 
 function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [text, setText]       = useState("");
@@ -92,8 +92,13 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [speed, setSpeed]     = useState<number>(1);
 
   const { speak, stop, status } = useElevenLabsTTS();
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const lineRefs  = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Stable refs so callbacks always see current values without stale closures
+  const playingRef = useRef(false);
+  const lineIdxRef = useRef(0);
+  const speedRef   = useRef(1);
+  const linesRef   = useRef<string[]>([]);
 
   // Fetch text
   useEffect(() => {
@@ -104,7 +109,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
       .then(t => setText(t))
       .catch(() => setError("Full text unavailable for this book."))
       .finally(() => setLoading(false));
-    return () => { clearInterval(timerRef.current!); };
+    return () => stop();
   }, [book.id]);
 
   const chapters = splitChapters(text);
@@ -112,75 +117,84 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const total    = lines.length;
   const progress = total > 0 ? ((lineIdx + 1) / total) * 100 : 0;
 
+  // Keep refs in sync with state
+  useEffect(() => { linesRef.current = lines; }, [lines]);
+  useEffect(() => { lineIdxRef.current = lineIdx; }, [lineIdx]);
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+  useEffect(() => { playingRef.current = playing; }, [playing]);
+
+  // Scroll active paragraph into view
+  useEffect(() => {
+    lineRefs.current[lineIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [lineIdx]);
+
   // Reset on chapter change
   useEffect(() => {
     stop();
     setPlaying(false);
     setLineIdx(0);
-    clearInterval(timerRef.current!);
   }, [chapter]);
 
-  // Scroll active line into view
-  useEffect(() => {
-    lineRefs.current[lineIdx]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [lineIdx]);
 
-  // Speak active line when it changes while playing
-  useEffect(() => {
-    if (playing && lines[lineIdx]) speak(lines[lineIdx]);
-  }, [lineIdx, playing]);
+  const speakParagraph = useCallback((idx: number) => {
+    const currentLines = linesRef.current;
+    if (!currentLines[idx]) return;
 
-  // Auto-advance timer
-  const startTimer = useCallback(() => {
-    clearInterval(timerRef.current!);
-    timerRef.current = setInterval(() => {
-      setLineIdx(prev => {
-        if (prev >= total - 1) {
-          setPlaying(false);
-          clearInterval(timerRef.current!);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, BASE_INTERVAL / speed);
-  }, [speed, total]);
+    speak(currentLines[idx], () => {
+      // onEnd callback — only advance if still playing
+      if (!playingRef.current) return;
 
-  useEffect(() => {
-    if (playing) startTimer();
-    else clearInterval(timerRef.current!);
-    return () => clearInterval(timerRef.current!);
-  }, [playing, startTimer]);
+      const next = lineIdxRef.current + 1;
+      if (next >= linesRef.current.length) {
+        setPlaying(false);
+        playingRef.current = false;
+        return;
+      }
+
+      // Short inter-paragraph pause, scaled by speed
+      const gap = Math.round(350 / speedRef.current);
+      setTimeout(() => {
+        if (!playingRef.current) return;
+        setLineIdx(next);
+        lineIdxRef.current = next;
+        speakParagraph(next);
+      }, gap);
+    });
+  }, [speak]);
 
   // Controls
   const togglePlay = () => {
-    if (playing) { stop(); setPlaying(false); }
-    else { setPlaying(true); }
+    if (playing) {
+      stop();
+      setPlaying(false);
+      playingRef.current = false;
+    } else {
+      setPlaying(true);
+      playingRef.current = true;
+      speakParagraph(lineIdx);
+    }
   };
 
   const skipLines = (n: number) => {
-    clearInterval(timerRef.current!);
-    setLineIdx(prev => Math.max(0, Math.min(total - 1, prev + n)));
-    if (playing) startTimer();
+    const next = Math.max(0, Math.min(total - 1, lineIdx + n));
+    stop();
+    setLineIdx(next);
+    lineIdxRef.current = next;
+    if (playing) speakParagraph(next);
   };
 
   const jumpToLine = (i: number) => {
-    clearInterval(timerRef.current!);
+    stop();
     setLineIdx(i);
-    if (playing) { speak(lines[i]); startTimer(); }
+    lineIdxRef.current = i;
+    if (playing) speakParagraph(i);
   };
 
   const changeSpeed = (s: number) => {
     setSpeed(s);
-    if (playing) {
-      clearInterval(timerRef.current!);
-      timerRef.current = setInterval(() => {
-        setLineIdx(prev => {
-          if (prev >= total - 1) { setPlaying(false); clearInterval(timerRef.current!); return prev; }
-          return prev + 1;
-        });
-      }, BASE_INTERVAL / s);
-    }
+    speedRef.current = s;
   };
+
 
   return (
     <div className="reader-overlay" onClick={onClose}>

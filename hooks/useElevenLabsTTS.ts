@@ -41,10 +41,16 @@ export function useElevenLabsTTS() {
   const audioRef   = useRef<HTMLAudioElement | null>(null);
   const chunksRef  = useRef<string[]>([]);
   const indexRef   = useRef(0);
+  const onEndRef   = useRef<(() => void) | undefined>(undefined); // stores the callback
 
   const playChain = async () => {
     const chunks = chunksRef.current;
-    if (indexRef.current >= chunks.length) { setStatus('idle'); return; }
+    if (indexRef.current >= chunks.length) {
+      setStatus('idle');
+      onEndRef.current?.(); // all chunks done — fire onEnd to advance paragraph
+      onEndRef.current = undefined;
+      return;
+    }
 
     setStatus('loading');
     try {
@@ -53,28 +59,35 @@ export function useElevenLabsTTS() {
       audio.onended = () => {
         URL.revokeObjectURL(audio.src);
         indexRef.current++;
-        playChain();
+        playChain(); // next chunk in same paragraph
       };
       await audio.play();
       setStatus('playing');
     } catch {
       setStatus('idle');
+      onEndRef.current = undefined;
     }
   };
 
-  const speak = (text: string) => {
+  // onEnd fires once the entire paragraph (all its chunks) finishes playing
+  const speak = (text: string, onEnd?: () => void) => {
     stop();
+    onEndRef.current  = onEnd;
     chunksRef.current = chunkText(text);
     indexRef.current  = 0;
     playChain();
   };
 
   const stop = () => {
-    audioRef.current?.pause();
-    if (audioRef.current) URL.revokeObjectURL(audioRef.current.src);
-    audioRef.current  = null;
+    if (audioRef.current) {
+      audioRef.current.onended = null; // prevent onEnd firing on manual stop
+      audioRef.current.pause();
+      URL.revokeObjectURL(audioRef.current.src);
+      audioRef.current = null;
+    }
     chunksRef.current = [];
     indexRef.current  = 0;
+    onEndRef.current  = undefined;
     setStatus('idle');
   };
 
