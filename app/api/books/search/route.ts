@@ -8,6 +8,10 @@ export async function GET(req: NextRequest) {
 
   const params = new URLSearchParams({ q, topic, page_size: '12' });
 
+  console.log("Searching for:", q);
+  console.log("URL:", `https://project-gutenberg-books-api.p.rapidapi.com/api/books?${params}`);
+  console.log("Key exists:", !!process.env.GUTENBERG_API_KEY);
+
   const res = await fetch(
     `https://project-gutenberg-books-api.p.rapidapi.com/api/books?${params}`,
     {
@@ -19,6 +23,9 @@ export async function GET(req: NextRequest) {
     }
   );
 
+  console.log("RapidAPI status:", res.status);
   const data = await res.json();
+  console.log("RapidAPI response:", JSON.stringify(data).slice(0, 300));
+
   return Response.json(data);
 }
