@@ -12,7 +12,7 @@ type Message = {
 const USERNAME = "Admin";
 
 const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
-const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
+const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G"; // Victoria
 
 async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
   const response = await fetch(

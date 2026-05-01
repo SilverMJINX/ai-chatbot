@@ -1,6 +1,9 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
+
+const USERNAME = "Admin";
 
 interface Book {
   id: number;
@@ -11,177 +14,158 @@ interface Book {
   download_count: number;
 }
 
-// Book Reader Modal
-function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
-  const [text, setText]       = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState('');
-  const [section, setSection] = useState(0);
-  const { speak, stop, status } = useElevenLabsTTS();
-
-  // Split into ~3000 char readable sections
-  const sections = text
-    .split(/\n{3,}/)
-    .map(s => s.trim())
-    .filter(s => s.length > 100);
-
-  const current = sections[section] ?? '';
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`/api/books/${book.id}/text`)
-      .then(r => r.ok ? r.text() : Promise.reject())
-      .then(t => setText(t))
-      .catch(() => setError('Full text unavailable for this book.'))
-      .finally(() => setLoading(false));
-    return () => stop(); // stop audio when modal closes
-  }, [book.id]);
-
+function WaveformIcon() {
   return (
-    <>
-      <style>{`
-        .reader-overlay {
-          position: fixed; inset: 0;
-          background: rgba(30,58,95,0.5);
-          backdrop-filter: blur(4px);
-          z-index: 100;
-          display: flex; align-items: center; justify-content: center;
-          padding: 24px;
-        }
-        .reader-panel {
-          background: #ffffff;
-          border-radius: 20px;
-          width: 100%; max-width: 720px;
-          max-height: 88vh;
-          display: flex; flex-direction: column;
-          box-shadow: 0 4px 20px rgba(37,99,168,0.1);
-          overflow: hidden;
-        }
-        .reader-header {
-          padding: 20px 24px;
-          border-bottom: 1px solid #d0e4f7;
-          display: flex; align-items: flex-start;
-          justify-content: space-between; gap: 12px;
-          flex-shrink: 0;
-        }
-        .reader-title  { font-size: 1rem; font-weight: 700; color: #1e3a5f; }
-        .reader-author { font-size: 0.8rem; color: #8aaac8; margin-top: 3px; }
-        .reader-controls {
-          padding: 12px 20px;
-          border-bottom: 1px solid #d0e4f7;
-          display: flex; align-items: center; gap: 10px;
-          flex-shrink: 0; flex-wrap: wrap;
-        }
-        .reader-body { flex: 1; overflow-y: auto; padding: 24px; }
-        .reader-text {
-          white-space: pre-wrap; word-break: break-word;
-          font-family: Georgia, serif;
-          font-size: 0.97rem; line-height: 1.9;
-          color: #1e3a5f;
-        }
-        .reader-status {
-          padding: 48px 24px; text-align: center; color: #8aaac8;
-          font-size: 0.9rem;
-        }
-        .reader-status.error { color: #b91c1c; }
-        .section-label { font-size: 0.72rem; color: #8aaac8; margin-left: auto; }
-        .close-btn {
-          width: 32px; height: 32px; border-radius: 10px;
-          border: 1.5px solid #d0e4f7; background: #f0f6ff;
-          color: #4a6080; cursor: pointer; font-size: 1rem;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .close-btn:hover { background: #dbeafe; }
-        .nav-btn {
-          font-size: 0.75rem; font-weight: 600;
-          padding: 6px 14px; border-radius: 20px;
-          border: 1.5px solid #bfdbfe;
-          background: #eff6ff; color: #2563a8;
-          cursor: pointer;
-        }
-        .nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-        .tts-reader-btn {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 0.76rem; font-weight: 600;
-          padding: 6px 14px 6px 11px; border-radius: 20px;
-          border: 1.5px solid #bfdbfe; background: #ffffff;
-          color: #2563a8; cursor: pointer;
-          box-shadow: 0 1px 4px rgba(37,99,168,0.10);
-        }
-        .tts-reader-btn.playing {
-          background: #f0fdf4; border-color: #86efac; color: #166534;
-        }
-        .tts-reader-btn.loading { opacity: 0.7; cursor: wait; }
-      `}</style>
-
-      <div className="reader-overlay" onClick={onClose}>
-        <div className="reader-panel" onClick={e => e.stopPropagation()}>
-
-          <div className="reader-header">
-            <div>
-              <p className="reader-title">{book.title}</p>
-              <p className="reader-author">
-                {book.authors.map(a => a.name).join(', ')}
-              </p>
-            </div>
-            <button className="close-btn" onClick={onClose}>✕</button>
-          </div>
-
-          {!loading && !error && sections.length > 0 && (
-            <div className="reader-controls">
-              <button
-                className={`tts-reader-btn ${status === 'playing' ? 'playing' : ''} ${status === 'loading' ? 'loading' : ''}`}
-                onClick={() => status === 'playing' ? stop() : speak(current)}
-              >
-                {status === 'idle'    && <><span>▶</span> Listen</>}
-                {status === 'loading' && <><span className="spin">↻</span> Loading…</>}
-                {status === 'playing' && <><span>⏹</span> Stop</>}
-              </button>
-
-              <button className="nav-btn" disabled={section === 0}
-                onClick={() => { stop(); setSection(s => s - 1); }}>
-                ← Prev
-              </button>
-              <button className="nav-btn" disabled={section >= sections.length - 1}
-                onClick={() => { stop(); setSection(s => s + 1); }}>
-                Next →
-              </button>
-
-              <span className="section-label">
-                Part {section + 1} of {sections.length}
-              </span>
-            </div>
-          )}
-
-          <div className="reader-body">
-            {loading && <p className="reader-status">Loading book text…</p>}
-            {error   && <p className="reader-status error">{error}</p>}
-            {!loading && !error && (
-              <pre className="reader-text">{current}</pre>
-            )}
-          </div>
-
-        </div>
-      </div>
-    </>
+    <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
+      {[3, 8, 13, 18, 23].map((x, i) => (
+        <rect
+          key={x}
+          x={x}
+          y={i % 2 === 0 ? 4 : 0}
+          width="3"
+          height={i % 2 === 0 ? 12 : 20}
+          rx="1.5"
+          style={{
+            animation: "waveBar 0.9s ease-in-out infinite",
+            animationDelay: `${i * 0.12}s`,
+            transformOrigin: "center",
+          }}
+        />
+      ))}
+    </svg>
   );
 }
 
-// Books Search Page
+function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [section, setSection] = useState(0);
+  const { speak, stop, status } = useElevenLabsTTS();
+
+  const sections = text
+    .split(/\n{3,}/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 100);
+
+  const current = sections[section] ?? "";
+
+  useEffect(() => {
+    setLoading(true);
+    setError("");
+    fetch(`/api/books/${book.id}/text`)
+      .then((r) => (r.ok ? r.text() : Promise.reject()))
+      .then((t) => setText(t))
+      .catch(() => setError("Full text unavailable for this book."))
+      .finally(() => setLoading(false));
+    return () => stop();
+  }, [book.id]);
+
+  return (
+    <div className="reader-overlay" onClick={onClose}>
+      <div className="reader-panel" onClick={(e) => e.stopPropagation()}>
+        {/* Reader Header */}
+        <div className="reader-header">
+          <div className="reader-header-left">
+            <div className="ai-avatar-lg">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="reader-title">{book.title}</h2>
+              <p className="reader-author">
+                {book.authors.map((a) => a.name).join(", ") || "Unknown author"}
+              </p>
+            </div>
+          </div>
+          <button className="reader-close-btn" onClick={onClose} type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* TTS Controls */}
+        {!loading && !error && sections.length > 0 && (
+          <div className="reader-controls">
+            <button
+              className={`tts-btn ${status === "playing" ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
+              onClick={() => (status === "playing" ? stop() : speak(current))}
+              type="button"
+            >
+              {status === "loading" && (
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+                </svg>
+              )}
+              {status === "playing" && <><WaveformIcon /><span>Stop</span></>}
+              {status === "idle" && (
+                <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>
+              )}
+            </button>
+            <span className="tts-label">ElevenLabs TTS</span>
+
+            <div className="reader-nav">
+              <button
+                className="chip chip-blue reader-nav-btn"
+                disabled={section === 0}
+                onClick={() => { stop(); setSection((s) => s - 1); }}
+                type="button"
+              >
+                ← Prev
+              </button>
+              <span className="reader-section-label">
+                Part {section + 1} of {sections.length}
+              </span>
+              <button
+                className="chip chip-blue reader-nav-btn"
+                disabled={section >= sections.length - 1}
+                onClick={() => { stop(); setSection((s) => s + 1); }}
+                type="button"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Reader Body */}
+        <div className="reader-body">
+          {loading && (
+            <div className="reader-status">
+              <div className="typing-bubble" style={{ justifyContent: "center" }}>
+                <span className="dot"/><span className="dot"/><span className="dot"/>
+              </div>
+              <p style={{ marginTop: 12 }}>Loading book text…</p>
+            </div>
+          )}
+          {error && <p className="reader-status reader-error">{error}</p>}
+          {!loading && !error && (
+            <pre className="reader-text">{current}</pre>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BooksPage() {
-  const [query, setQuery]       = useState('');
-  const [books, setBooks]       = useState<Book[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [selected, setSelected] = useState<Book | null>(null);
+  const [query, setQuery] = useState("");
+  const [books, setBooks] = useState<Book[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [selected, setSelected] = useState<Book | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const search = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
     try {
-      const res  = await fetch(`/api/books/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/books/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setBooks(data.results ?? []);
     } catch {
@@ -193,126 +177,569 @@ export default function BooksPage() {
   return (
     <>
       <style>{`
-        /* paste your full <style> block from chat/page.tsx here */
-        /* plus these book-page specific styles: */
-        .books-page {
-          max-width: 900px; margin: 0 auto;
-          padding: 36px 24px;
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;1,400&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+          --blue:        #4a90d9;
+          --blue-dark:   #2563a8;
+          --blue-deeper: #1a4a80;
+          --blue-light:  #dbeafe;
+          --blue-soft:   #eff6ff;
+          --blue-mid:    #bfdbfe;
+          --blue-glow:   rgba(74,144,217,0.25);
+          --coral:       #f87171;
+          --coral-light: #fff5f5;
+          --bg:          #f0f6ff;
+          --white:       #ffffff;
+          --text:        #1e3a5f;
+          --text-mid:    #4a6080;
+          --text-soft:   #8aaac8;
+          --border:      #d0e4f7;
+          --shadow-sm:   0 1px 4px rgba(37,99,168,0.07);
+          --shadow-md:   0 4px 20px rgba(37,99,168,0.1);
         }
-        .books-title {
+
+        html, body { height: 100%; }
+
+        body {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          background: var(--bg);
+          color: var(--text);
+          min-height: 100vh;
+          background-image:
+            radial-gradient(ellipse 55% 40% at 90% 5%,  rgba(74,144,217,0.12) 0%, transparent 60%),
+            radial-gradient(ellipse 45% 45% at 5%  95%, rgba(74,144,217,0.08) 0%, transparent 60%);
+        }
+
+        .page-wrap {
+          display: grid;
+          grid-template-rows: 64px 1fr;
+          min-height: 100vh;
+        }
+
+        /* ── Nav (identical to chat page) ── */
+        .topnav {
+          background: var(--white);
+          border-bottom: 1px solid var(--border);
+          display: flex;
+          align-items: center;
+          padding: 0 32px;
+          gap: 16px;
+          box-shadow: var(--shadow-sm);
+          z-index: 20;
+        }
+
+        .brand {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          text-decoration: none;
+          flex-shrink: 0;
+        }
+
+        .brand-icon {
+          width: 36px; height: 36px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 4px 12px var(--blue-glow);
+        }
+
+        .brand-name {
           font-family: 'Fraunces', Georgia, serif;
-          font-size: 1.6rem; font-weight: 600;
-          color: #1e3a5f; margin-bottom: 6px;
+          font-size: 1.3rem; font-weight: 600;
+          color: var(--text); letter-spacing: -0.02em;
         }
-        .books-subtitle {
-          font-size: 0.82rem; color: #8aaac8; margin-bottom: 28px;
+        .brand-name span { color: var(--blue); }
+
+        .nav-divider { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+
+        .nav-badge {
+          display: flex; align-items: center; gap: 6px;
+          background: var(--blue-soft); color: var(--blue-dark);
+          font-size: 0.72rem; font-weight: 600;
+          padding: 5px 12px; border-radius: 20px;
+          border: 1px solid var(--blue-mid);
         }
-        .search-row {
-          display: flex; gap: 10px; margin-bottom: 32px;
+
+        .nav-books-link {
+          font-size: 0.82rem; font-weight: 600;
+          color: var(--white); text-decoration: none;
+          padding: 6px 14px; border-radius: 20px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          border: 1.5px solid var(--blue);
+          box-shadow: 0 2px 8px var(--blue-glow);
+          white-space: nowrap;
         }
-        .search-input {
-          flex: 1; border: 2px solid #d0e4f7;
-          border-radius: 14px; padding: 12px 18px;
-          font-size: 0.9rem; font-family: 'Plus Jakarta Sans', sans-serif;
-          color: #1e3a5f; outline: none; background: #ffffff;
+
+        .nav-chat-link {
+          font-size: 0.82rem; font-weight: 600;
+          color: var(--blue-dark); text-decoration: none;
+          padding: 6px 14px; border-radius: 20px;
+          background: var(--blue-soft);
+          border: 1.5px solid var(--blue-mid);
+          transition: all 0.15s; white-space: nowrap;
+        }
+        .nav-chat-link:hover { background: var(--blue-light); border-color: var(--blue); }
+
+        .nav-spacer { flex: 1; }
+
+        .nav-user {
+          display: flex; align-items: center; gap: 10px;
+          padding: 6px 12px; border-radius: 12px;
+          cursor: pointer; transition: background 0.15s;
+        }
+        .nav-user:hover { background: var(--bg); }
+
+        .nav-user-avatar {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 0.78rem; font-weight: 700; color: white;
+          box-shadow: 0 2px 8px var(--blue-glow);
+        }
+
+        .nav-user-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+
+        /* ── Page content ── */
+        .books-main {
+          max-width: 900px; width: 100%;
+          margin: 0 auto; padding: 36px 24px;
+          overflow-y: auto;
+        }
+
+        .books-subheader {
+          display: flex; align-items: center; gap: 14px;
+          padding-bottom: 24px;
+          border-bottom: 1px solid var(--border);
+          margin-bottom: 28px;
+        }
+
+        .ai-avatar-lg {
+          width: 46px; height: 46px; border-radius: 14px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          display: flex; align-items: center; justify-content: center;
+          box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0;
+        }
+
+        .books-subheader-text h2 { font-size: 0.98rem; font-weight: 700; color: var(--text); }
+        .books-subheader-text p  { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
+
+        .subheader-chips { margin-left: auto; display: flex; gap: 8px; }
+
+        .chip {
+          font-size: 0.71rem; font-weight: 600;
+          padding: 5px 11px; border-radius: 20px;
+          border: 1.5px solid; white-space: nowrap; cursor: default;
+        }
+        .chip-blue  { color: var(--blue-dark); background: var(--blue-soft); border-color: var(--blue-mid); }
+        .chip-coral { color: #b91c1c; background: var(--coral-light); border-color: #fca5a5; }
+
+        /* ── Search bar (matches input-wrapper) ── */
+        .search-wrapper {
+          display: flex; align-items: center; gap: 10px;
+          background: var(--white);
+          border: 2px solid var(--border);
+          border-radius: 20px;
+          padding: 10px 10px 10px 20px;
           transition: border-color 0.2s, box-shadow 0.2s;
+          box-shadow: var(--shadow-sm);
+          margin-bottom: 28px;
         }
-        .search-input:focus {
-          border-color: #4a90d9;
+        .search-wrapper:focus-within {
+          border-color: var(--blue);
           box-shadow: 0 0 0 4px rgba(74,144,217,0.12);
         }
-        .search-btn {
-          padding: 12px 22px; border-radius: 14px; border: none;
-          background: linear-gradient(135deg, #4a90d9, #6baee8);
-          color: white; font-weight: 600; font-size: 0.88rem;
-          cursor: pointer; white-space: nowrap;
-          box-shadow: 0 4px 14px rgba(74,144,217,0.25);
+
+        .search-input {
+          flex: 1; border: none; outline: none;
+          background: transparent;
           font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 0.9rem; color: var(--text);
+          caret-color: var(--blue);
         }
-        .search-btn:hover { transform: translateY(-1px); }
+        .search-input::placeholder { color: var(--text-soft); }
+
+        .icon-btn {
+          width: 38px; height: 38px; border-radius: 12px;
+          border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.18s; flex-shrink: 0;
+        }
+
+        .send-btn {
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          color: white; box-shadow: 0 4px 14px var(--blue-glow);
+        }
+        .send-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(74,144,217,0.4); }
+        .send-btn:disabled {
+          background: var(--blue-light); color: var(--text-soft);
+          box-shadow: none; cursor: not-allowed; transform: none;
+        }
+
+        /* ── Book grid ── */
         .books-grid {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: 16px;
         }
+
         .book-card {
-          background: #ffffff; border: 1px solid #d0e4f7;
-          border-radius: 16px; padding: 18px;
-          cursor: pointer; transition: all 0.18s;
-          box-shadow: 0 1px 4px rgba(37,99,168,0.07);
+          background: var(--white);
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          padding: 18px;
+          cursor: pointer;
+          transition: all 0.18s;
+          box-shadow: var(--shadow-sm);
+          animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1);
         }
         .book-card:hover {
-          border-color: #4a90d9;
+          border-color: var(--blue);
           transform: translateY(-2px);
           box-shadow: 0 6px 20px rgba(74,144,217,0.15);
         }
+
         .book-card-title {
           font-size: 0.88rem; font-weight: 700;
-          color: #1e3a5f; margin-bottom: 5px;
+          color: var(--text); margin-bottom: 5px;
           line-height: 1.4;
           display: -webkit-box; -webkit-line-clamp: 2;
           -webkit-box-orient: vertical; overflow: hidden;
         }
+
         .book-card-author {
-          font-size: 0.74rem; color: #8aaac8; margin-bottom: 12px;
+          font-size: 0.74rem; color: var(--text-soft);
+          margin-bottom: 14px;
           display: -webkit-box; -webkit-line-clamp: 1;
           -webkit-box-orient: vertical; overflow: hidden;
         }
+
         .book-card-footer {
           display: flex; align-items: center;
           justify-content: space-between;
         }
+
+        .book-card-downloads {
+          font-size: 0.68rem; color: var(--text-soft);
+        }
+
+        /* ── Empty / loading states ── */
         .empty-state {
           text-align: center; padding: 60px 0;
-          color: #8aaac8; font-size: 0.9rem;
+          color: var(--text-soft); font-size: 0.9rem;
+        }
+
+        .empty-icon {
+          font-size: 2.5rem; margin-bottom: 12px;
+        }
+
+        /* ── Dots (reused from chat) ── */
+        .typing-bubble {
+          display: flex; align-items: center; gap: 5px;
+        }
+
+        .dot {
+          width: 7px; height: 7px; border-radius: 50%;
+          background: var(--blue); display: inline-block;
+          animation: bounce 1.3s infinite ease-in-out;
+        }
+        .dot:nth-child(2) { animation-delay: 0.15s; }
+        .dot:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+          30% { transform: translateY(-7px); opacity: 1; }
+        }
+
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── TTS button (identical to chat page) ── */
+        .tts-btn {
+          display: inline-flex; align-items: center; gap: 6px;
+          font-size: 0.76rem; font-weight: 600;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          padding: 6px 14px 6px 11px; border-radius: 20px;
+          border: 1.5px solid var(--blue-mid);
+          background: var(--white); color: var(--blue-dark);
+          cursor: pointer; transition: all 0.15s ease;
+          white-space: nowrap;
+          box-shadow: 0 1px 4px rgba(37,99,168,0.10);
+        }
+        .tts-btn:hover {
+          background: var(--blue-soft); border-color: var(--blue);
+          transform: translateY(-1px);
+          box-shadow: 0 3px 10px rgba(74,144,217,0.2);
+        }
+        .tts-btn.tts-playing {
+          background: #f0fdf4; border-color: #86efac; color: #166534;
+          animation: ttsGlow 2s ease-in-out infinite;
+        }
+        .tts-btn.tts-loading { opacity: 0.7; cursor: wait; }
+
+        .tts-label { font-size: 0.64rem; color: var(--text-soft); letter-spacing: 0.02em; }
+
+        @keyframes ttsGlow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,172,0.4); }
+          50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
+        }
+
+        @keyframes waveBar {
+          0%, 100% { transform: scaleY(0.35); }
+          50%       { transform: scaleY(1); }
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 0.7s linear infinite; }
+
+        /* ── Reader modal ── */
+        .reader-overlay {
+          position: fixed; inset: 0;
+          background: rgba(30,58,95,0.5);
+          backdrop-filter: blur(6px);
+          z-index: 100;
+          display: flex; align-items: center; justify-content: center;
+          padding: 24px;
+          animation: fadeUp 0.2s ease;
+        }
+
+        .reader-panel {
+          background: var(--white);
+          border-radius: 20px;
+          width: 100%; max-width: 740px;
+          max-height: 88vh;
+          display: flex; flex-direction: column;
+          box-shadow: var(--shadow-md);
+          overflow: hidden;
+          border: 1px solid var(--border);
+        }
+
+        .reader-header {
+          padding: 18px 20px;
+          border-bottom: 1px solid var(--border);
+          display: flex; align-items: center;
+          justify-content: space-between; gap: 14px;
+          flex-shrink: 0;
+        }
+
+        .reader-header-left {
+          display: flex; align-items: center; gap: 14px;
+          min-width: 0;
+        }
+
+        .reader-title {
+          font-size: 0.95rem; font-weight: 700;
+          color: var(--text); line-height: 1.3;
+          display: -webkit-box; -webkit-line-clamp: 1;
+          -webkit-box-orient: vertical; overflow: hidden;
+        }
+
+        .reader-author {
+          font-size: 0.74rem; color: var(--text-soft); margin-top: 2px;
+        }
+
+        .reader-close-btn {
+          width: 34px; height: 34px; border-radius: 10px;
+          border: 1.5px solid var(--border);
+          background: var(--bg); color: var(--text-mid);
+          cursor: pointer; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          transition: all 0.15s;
+        }
+        .reader-close-btn:hover { background: var(--blue-light); border-color: var(--blue); color: var(--blue-dark); }
+
+        .reader-controls {
+          padding: 12px 20px;
+          border-bottom: 1px solid var(--border);
+          display: flex; align-items: center; gap: 12px;
+          flex-shrink: 0; flex-wrap: wrap;
+        }
+
+        .reader-nav {
+          margin-left: auto;
+          display: flex; align-items: center; gap: 8px;
+        }
+
+        .reader-nav-btn {
+          cursor: pointer !important;
+          transition: all 0.15s;
+        }
+        .reader-nav-btn:hover:not(:disabled) {
+          background: var(--blue-light) !important;
+          border-color: var(--blue) !important;
+        }
+        .reader-nav-btn:disabled {
+          opacity: 0.35; cursor: not-allowed !important;
+        }
+
+        .reader-section-label {
+          font-size: 0.72rem; color: var(--text-soft); white-space: nowrap;
+        }
+
+        .reader-body {
+          flex: 1; overflow-y: auto; padding: 28px 28px;
+        }
+
+        .reader-body::-webkit-scrollbar { width: 5px; }
+        .reader-body::-webkit-scrollbar-track { background: transparent; }
+        .reader-body::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
+
+        .reader-text {
+          white-space: pre-wrap; word-break: break-word;
+          font-family: 'Georgia', serif;
+          font-size: 0.97rem; line-height: 1.9;
+          color: var(--text);
+        }
+
+        .reader-status {
+          padding: 48px 0; text-align: center;
+          color: var(--text-soft); font-size: 0.88rem;
+        }
+
+        .reader-error { color: #b91c1c; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+          .topnav { padding: 0 16px; }
+          .books-main { padding: 24px 16px; }
+          .subheader-chips { display: none; }
+          .reader-panel { max-height: 95vh; }
+        }
+
+        @media (max-width: 480px) {
+          .brand-name { display: none; }
+          .nav-badge { display: none; }
+          .books-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
         }
       `}</style>
 
-      <div className="books-page">
-        <h1 className="books-title">📚 Book Library</h1>
-        <p className="books-subtitle">
-          Search 70,000+ free classic books · read full text · listen via ElevenLabs
-        </p>
-
-        <div className="search-row">
-          <input
-            className="search-input"
-            placeholder="Search by title or author… e.g. Shakespeare, Frankenstein"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && search()}
-          />
-          <button className="search-btn" onClick={search} disabled={loading}>
-            {loading ? 'Searching…' : 'Search'}
-          </button>
-        </div>
-
-        {!searched && (
-          <p className="empty-state">Search for a book above to get started</p>
-        )}
-
-        {searched && !loading && books.length === 0 && (
-          <p className="empty-state">No books found — try a different search</p>
-        )}
-
-        <div className="books-grid">
-          {books.map(book => (
-            <div key={book.id} className="book-card" onClick={() => setSelected(book)}>
-              <p className="book-card-title">{book.title}</p>
-              <p className="book-card-author">
-                {book.authors.map(a => a.name).join(', ') || 'Unknown author'}
-              </p>
-              <div className="book-card-footer">
-                <span className="chip chip-blue" style={{ fontSize: '0.68rem' }}>
-                  Read + Listen
-                </span>
-                <span style={{ fontSize: '0.68rem', color: '#8aaac8' }}>
-                  #{book.id}
-                </span>
-              </div>
+      <div className="page-wrap">
+        {/* Nav — matches chat page exactly */}
+        <nav className="topnav">
+          <div className="brand">
+            <div className="brand-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+              </svg>
             </div>
-          ))}
-        </div>
+            <span className="brand-name">At<span>las</span></span>
+          </div>
+
+          <div className="nav-divider" />
+
+          <div className="nav-badge">
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--blue)", display: "inline-block" }} />
+            Book Library
+          </div>
+
+          <a href="/chat" className="nav-chat-link">
+            💬 <span>Chat</span>
+          </a>
+
+          <span className="nav-books-link">📚 Books</span>
+
+          <div className="nav-spacer" />
+
+          <div className="nav-user">
+            <div className="nav-user-avatar">{USERNAME.charAt(0)}</div>
+            <span className="nav-user-name">{USERNAME}</span>
+          </div>
+        </nav>
+
+        <main className="books-main">
+          {/* Subheader — mirrors chat subheader */}
+          <div className="books-subheader">
+            <div className="ai-avatar-lg">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+              </svg>
+            </div>
+            <div className="books-subheader-text">
+              <h2>Atlas · Book Library</h2>
+              <p>Search 70,000+ classic books · read full text · listen via ElevenLabs</p>
+            </div>
+            <div className="subheader-chips">
+              <span className="chip chip-blue">Project Gutenberg</span>
+              <span className="chip chip-blue">Free &amp; Public Domain</span>
+            </div>
+          </div>
+
+          {/* Search bar — matches input-wrapper style */}
+          <div className="search-wrapper">
+            <input
+              ref={inputRef}
+              className="search-input"
+              placeholder="Search by title or author… e.g. Shakespeare, Frankenstein"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && search()}
+            />
+            <button
+              className="icon-btn send-btn"
+              onClick={search}
+              disabled={!query.trim() || loading}
+              type="button"
+              title="Search"
+            >
+              {loading ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="11" cy="11" r="8"/>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              )}
+            </button>
+          </div>
+
+          {/* States */}
+          {!searched && (
+            <div className="empty-state">
+              <div className="empty-icon">📚</div>
+              <p>Search for a book above to get started</p>
+            </div>
+          )}
+
+          {searched && !loading && books.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-icon">🔍</div>
+              <p>No books found — try a different search</p>
+            </div>
+          )}
+
+          {/* Book grid */}
+          <div className="books-grid">
+            {books.map((book) => (
+              <div
+                key={book.id}
+                className="book-card"
+                onClick={() => setSelected(book)}
+              >
+                <p className="book-card-title">{book.title}</p>
+                <p className="book-card-author">
+                  {book.authors.map((a) => a.name).join(", ") || "Unknown author"}
+                </p>
+                <div className="book-card-footer">
+                  <span className="chip chip-blue" style={{ fontSize: "0.67rem" }}>
+                    Read + Listen
+                  </span>
+                  <span className="book-card-downloads">
+                    {book.download_count?.toLocaleString() ?? "—"} downloads
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </main>
       </div>
 
       {selected && (
