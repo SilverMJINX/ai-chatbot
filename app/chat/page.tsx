@@ -9,14 +9,10 @@ type Message = {
   timestamp: Date;
 };
 
-type SpeechRecognition = any;
-type SpeechRecognitionEvent = any;
-
 const USERNAME = "Admin";
 
-// ElevenLabs TTS integration
 const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
-const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G"; // Custom voice: Victoria
+const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
 
 async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
   const response = await fetch(
@@ -47,8 +43,7 @@ async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
 
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  return audio;
+  return new Audio(url);
 }
 
 const INITIAL_MESSAGE: Message = {
@@ -74,13 +69,33 @@ function TypingIndicator() {
   );
 }
 
-// TTS Button 
+function WaveformIcon() {
+  return (
+    <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
+      {[3, 8, 13, 18, 23].map((x, i) => (
+        <rect
+          key={x}
+          x={x}
+          y={i % 2 === 0 ? 4 : 0}
+          width="3"
+          height={i % 2 === 0 ? 12 : 20}
+          rx="1.5"
+          style={{
+            animation: "waveBar 0.9s ease-in-out infinite",
+            animationDelay: `${i * 0.12}s`,
+            transformOrigin: "center",
+          }}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function TTSButton({ text }: { text: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const handleClick = async () => {
-    // If playing, stop and reset
     if (status === "playing") {
       audioRef.current?.pause();
       if (audioRef.current) {
@@ -91,10 +106,7 @@ function TTSButton({ text }: { text: string }) {
       setStatus("idle");
       return;
     }
-
-    // If loading, ignore
     if (status === "loading") return;
-
     setStatus("loading");
     try {
       const audio = await speakWithElevenLabs(text);
@@ -116,7 +128,6 @@ function TTSButton({ text }: { text: string }) {
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -157,28 +168,6 @@ function TTSButton({ text }: { text: string }) {
         </>
       )}
     </button>
-  );
-}
-
-function WaveformIcon() {
-  return (
-    <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
-      {[3, 8, 13, 18, 23].map((x, i) => (
-        <rect
-          key={x}
-          x={x}
-          y={i % 2 === 0 ? 4 : 0}
-          width="3"
-          height={i % 2 === 0 ? 12 : 20}
-          rx="1.5"
-          style={{
-            animation: "waveBar 0.9s ease-in-out infinite",
-            animationDelay: `${i * 0.12}s`,
-            transformOrigin: "center",
-          }}
-        />
-      ))}
-    </svg>
   );
 }
 
@@ -356,16 +345,6 @@ export default function ChatPage() {
           gap: 16px;
           box-shadow: var(--shadow-sm);
           z-index: 20;
-          href="/books"
-          style={{
-            fontSize: '0.82rem', fontWeight: 600,
-            color: '#2563a8', textDecoration: 'none',
-            padding: '6px 14px', borderRadius: '20px',
-            background: '#eff6ff', border: '1.5px solid #bfdbfe',
-          }}
-        >
-          📚 Books
-        </a>
         }
 
         .brand {
@@ -427,6 +406,23 @@ export default function ChatPage() {
         }
 
         .nav-spacer { flex: 1; }
+
+        .nav-books-link {
+          font-size: 0.82rem;
+          font-weight: 600;
+          color: var(--blue-dark);
+          text-decoration: none;
+          padding: 6px 14px;
+          border-radius: 20px;
+          background: var(--blue-soft);
+          border: 1.5px solid var(--blue-mid);
+          transition: all 0.15s;
+          white-space: nowrap;
+        }
+        .nav-books-link:hover {
+          background: var(--blue-light);
+          border-color: var(--blue);
+        }
 
         .nav-user {
           display: flex;
@@ -591,7 +587,6 @@ export default function ChatPage() {
 
         .user-bubble time { color: rgba(255,255,255,0.65); }
 
-        /* ── TTS row — sits BELOW the bubble ── */
         .bubble-col {
           display: flex;
           flex-direction: column;
@@ -643,25 +638,15 @@ export default function ChatPage() {
           50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
         }
 
-        .tts-btn.tts-loading {
-          opacity: 0.7;
-          cursor: wait;
-        }
+        .tts-btn.tts-loading { opacity: 0.7; cursor: wait; }
 
-        /* Waveform bar animation */
         @keyframes waveBar {
           0%, 100% { transform: scaleY(0.35); }
           50%       { transform: scaleY(1); }
         }
 
-        /* Spinner */
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-        .spin {
-          animation: spin 0.7s linear infinite;
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 0.7s linear infinite; }
 
         .tts-label {
           font-size: 0.64rem;
@@ -669,7 +654,6 @@ export default function ChatPage() {
           letter-spacing: 0.02em;
         }
 
-        /* ── Typing dots ── */
         .typing-bubble {
           display: flex;
           align-items: center;
@@ -693,7 +677,6 @@ export default function ChatPage() {
           30% { transform: translateY(-7px); opacity: 1; }
         }
 
-        /* ── Input ── */
         .input-area { padding: 14px 0 22px; flex-shrink: 0; }
 
         .error-msg {
@@ -819,12 +802,12 @@ export default function ChatPage() {
         @media (max-width: 480px) {
           .brand-name { display: none; }
           .nav-badge { display: none; }
+          .nav-books-link span { display: none; }
           .bubble { max-width: 88%; font-size: 0.875rem; }
         }
       `}</style>
 
       <div className="page-wrap">
-
         <nav className="topnav">
           <div className="brand">
             <div className="brand-icon">
@@ -842,6 +825,10 @@ export default function ChatPage() {
             <span className="live-dot" />
             Session Active
           </div>
+
+          <a href="/books" className="nav-books-link">
+            📚 <span>Books</span>
+          </a>
 
           <div className="nav-spacer" />
 
@@ -881,7 +868,9 @@ export default function ChatPage() {
             {error && (
               <p className="error-msg">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
                 {error}
               </p>
@@ -936,7 +925,6 @@ export default function ChatPage() {
             </div>
           </div>
         </main>
-
       </div>
     </>
   );
