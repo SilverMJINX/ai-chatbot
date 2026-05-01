@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
+import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 
 interface Book {
   id: number;
