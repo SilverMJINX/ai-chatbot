@@ -14,7 +14,7 @@ interface Book {
   download_count: number;
 }
 
-// ── Text helpers ──────────────────────────────────────────────────────────────
+// Text helpers
 
 /** Strip Project Gutenberg header/footer boilerplate */
 function stripBoilerplate(text: string): string {
@@ -37,11 +37,6 @@ function stripBoilerplate(text: string): string {
   return text.trim();
 }
 
-/**
- * Split cleaned text into chapters.
- * Matches "CHAPTER I/1/One", "PART II", "BOOK III", etc.
- * Falls back to a single chunk if no headings found.
- */
 function splitChapters(rawText: string): string[] {
   const text = stripBoilerplate(rawText);
 
@@ -53,14 +48,6 @@ function splitChapters(rawText: string): string[] {
   return chunks.length > 1 ? chunks : [text];
 }
 
-/**
- * Convert a chapter string into an array of readable paragraphs.
- *
- * Strategy:
- *  - Blank lines = paragraph boundaries
- *  - Join continuation lines within the same paragraph
- *  - Filter out publisher metadata, all-caps junk, very short lines
- */
 function splitLines(section: string): string[] {
   const paragraphs: string[] = [];
   let current = "";
@@ -90,12 +77,10 @@ function splitLines(section: string): string[] {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
 const BASE_INTERVAL = 2800;
 
-// ── BookReader ────────────────────────────────────────────────────────────────
+// BookReader 
 
 function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [text, setText]       = useState("");
@@ -329,7 +314,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   );
 }
 
-// ── BooksPage ─────────────────────────────────────────────────────────────────
+// BooksPage 
 
 export default function BooksPage() {
   const [query, setQuery]       = useState("");
