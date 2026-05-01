@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useElevenLabsTTS } from '@/hooks/useElevenLabsTTS';
 
 type Message = {
   id: string;
@@ -74,13 +75,13 @@ function TypingIndicator() {
   );
 }
 
-// ── TTS button embedded in each AI bubble ────────────────────────────────────
+// TTS Button 
 function TTSButton({ text }: { text: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const handleClick = async () => {
-    // If currently playing, stop
+    // If playing, stop and reset
     if (status === "playing") {
       audioRef.current?.pause();
       if (audioRef.current) {
@@ -181,7 +182,6 @@ function WaveformIcon() {
     </svg>
   );
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === "user";
