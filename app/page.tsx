@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 
-// Types
 type BookItem = {
   id: string;
   title: string;
@@ -24,18 +23,22 @@ type Section = {
   query: string;
 };
 
-// Config
 const GBOOKS_KEY = process.env.NEXT_PUBLIC_GOOGLE_BOOKS_API_KEY || "";
 const GBOOKS_URL = "https://www.googleapis.com/books/v1/volumes";
 
+const EDITOR_PICK: BookItem = {
+  id: "seven-habits",
+  title: "The 7 Habits of Highly Effective People",
+  authors: "Stephen R. Covey",
+  cover: "https://covers.openlibrary.org/b/isbn/9781982137137-L.jpg",
+  rating: 4.5,
+  ratingCount: 150000,
+  categories: ["Self Help"],
+  previewLink: "https://www.amazon.com/7-Habits-Highly-Effective-People/dp/1982137134",
+  description: "A principle-centered approach for solving personal and professional problems. Covey's insights into human nature and change have helped millions live with fairness, integrity, and dignity.",
+};
+
 const SECTIONS: Section[] = [
-  {
-    id: "mood",
-    tag: "Curated",
-    title: "When the mind needs",
-    titleEm: "quiet",
-    query: "subject:self-help mindfulness anxiety stress",
-  },
   {
     id: "top",
     tag: "Top Rated",
@@ -70,7 +73,6 @@ const GENRES = [
   { label: "🚀 Growth",        genre: "subject:self-help success motivation" },
 ];
 
-// API helpers
 async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance"): Promise<BookItem[]> {
   try {
     const params = new URLSearchParams({
@@ -83,9 +85,7 @@ async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance")
     });
     const res  = await fetch(`${GBOOKS_URL}?${params}`);
     const data = await res.json();
-    return (data.items || [])
-      .map(parseBook)
-      .filter((b: BookItem) => b.cover);
+    return (data.items || []).map(parseBook).filter((b: BookItem) => b.cover);
   } catch {
     return [];
   }
@@ -111,7 +111,98 @@ function starStr(rating: number): string {
   return "★".repeat(full) + "☆".repeat(5 - full);
 }
 
-// Sub-components
+// ── Book Detail Modal ──────────────────────────────────────────────────────
+
+function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  const [imgErr, setImgErr] = useState(false);
+  const cat = book.categories[0] || "Book";
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
+        <div className="modal-inner">
+          {/* Cover */}
+          <div className="modal-cover-col">
+            <div className="modal-cover-wrap">
+              {book.cover && !imgErr ? (
+                <img src={book.cover} alt={book.title} onError={() => setImgErr(true)} />
+              ) : (
+                <div className="modal-no-cover">📖</div>
+              )}
+            </div>
+            {book.rating && (
+              <div className="modal-rating">
+                <span className="stars">{starStr(book.rating)}</span>
+                <span>{book.rating.toFixed(1)}</span>
+                {book.ratingCount > 0 && (
+                  <span className="modal-rating-count">({book.ratingCount.toLocaleString()} ratings)</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="modal-info-col">
+            <div className="modal-tag">{cat}</div>
+            <h2 className="modal-title">{book.title}</h2>
+            <p className="modal-author">by {book.authors}</p>
+
+            {book.description ? (
+              <>
+                <div className="modal-desc-label">About this book</div>
+                <p className="modal-desc">{book.description}</p>
+              </>
+            ) : (
+              <p className="modal-desc modal-desc-empty">No description available for this book.</p>
+            )}
+
+            <div className="modal-actions">
+              <Link href="/chat" className="modal-btn-primary" onClick={onClose}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Read with Atlas
+              </Link>
+              {book.previewLink && book.previewLink !== "#" && (
+                <a
+                  href={book.previewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="modal-btn-secondary"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                  Preview
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Skeleton & Cards ───────────────────────────────────────────────────────
+
 function SkeletonCard() {
   return (
     <div style={{ flexShrink: 0, width: 160 }}>
@@ -122,13 +213,10 @@ function SkeletonCard() {
   );
 }
 
-function BookCard({ book }: { book: BookItem }) {
+function BookCard({ book, onSelect }: { book: BookItem; onSelect: (b: BookItem) => void }) {
   const [imgErr, setImgErr] = useState(false);
   return (
-    <div
-      className="book-card"
-      onClick={() => book.previewLink !== "#" && window.open(book.previewLink, "_blank")}
-    >
+    <div className="book-card" onClick={() => onSelect(book)}>
       <div className="book-cover-wrap">
         {book.cover && !imgErr ? (
           <img src={book.cover} alt={book.title} loading="lazy" onError={() => setImgErr(true)} />
@@ -140,8 +228,9 @@ function BookCard({ book }: { book: BookItem }) {
         )}
         <div className="book-cover-overlay">
           <div className="book-play-circle">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M9 18V6l8 6-8 6z"/></svg>
           </div>
+          <span className="book-overlay-hint">View details</span>
         </div>
       </div>
       <div className="book-meta">
@@ -158,11 +247,11 @@ function BookCard({ book }: { book: BookItem }) {
   );
 }
 
-function FeaturedCard({ book }: { book: BookItem }) {
+function FeaturedCard({ book, onSelect }: { book: BookItem; onSelect: (b: BookItem) => void }) {
   const [imgErr, setImgErr] = useState(false);
   const cat = book.categories[0] || "Book";
   return (
-    <div className="featured-card" onClick={() => book.previewLink !== "#" && window.open(book.previewLink, "_blank")}>
+    <div className="featured-card" onClick={() => onSelect(book)}>
       <div className="featured-card-cover">
         {book.cover && !imgErr
           ? <img src={book.cover} alt={book.title} loading="lazy" onError={() => setImgErr(true)} />
@@ -180,19 +269,18 @@ function FeaturedCard({ book }: { book: BookItem }) {
             <span style={{ color: "var(--text-dim)" }}>({book.ratingCount.toLocaleString()})</span>
           </div>
         )}
-        <Link href="/chat" className="featured-card-read" onClick={e => e.stopPropagation()}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Read with Atlas
-        </Link>
+        <button className="featured-card-read" onClick={e => { e.stopPropagation(); onSelect(book); }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          View details
+        </button>
       </div>
     </div>
   );
 }
 
-function Carousel({ books, loading, id }: { books: BookItem[]; loading: boolean; id: string }) {
+function Carousel({ books, loading, id, onSelect }: { books: BookItem[]; loading: boolean; id: string; onSelect: (b: BookItem) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const scroll = (dir: number) => ref.current?.scrollBy({ left: dir * 520, behavior: "smooth" });
-
   return (
     <div className="carousel-wrap">
       <button className="carousel-arrow left" onClick={() => scroll(-1)} aria-label="Scroll left">
@@ -201,7 +289,7 @@ function Carousel({ books, loading, id }: { books: BookItem[]; loading: boolean;
       <div className="carousel" ref={ref} id={id}>
         {loading
           ? Array.from({ length: 10 }).map((_, i) => <SkeletonCard key={i} />)
-          : books.map(b => <BookCard key={b.id} book={b} />)
+          : books.map(b => <BookCard key={b.id} book={b} onSelect={onSelect} />)
         }
       </div>
       <button className="carousel-arrow right" onClick={() => scroll(1)} aria-label="Scroll right">
@@ -211,45 +299,33 @@ function Carousel({ books, loading, id }: { books: BookItem[]; loading: boolean;
   );
 }
 
-// Main page
+// ── Main Page ──────────────────────────────────────────────────────────────
+
 export default function LandingPage() {
   const [shelves, setShelves]         = useState<Record<string, BookItem[]>>({});
-  const [loadingIds, setLoadingIds]   = useState<Set<string>>(new Set(SECTIONS.map(s => s.id).concat(["featured", "mood"])));
+  const [loadingIds, setLoadingIds]   = useState<Set<string>>(new Set(SECTIONS.map(s => s.id).concat(["featured"])));
   const [featured, setFeatured]       = useState<BookItem[]>([]);
-  const [heroBook, setHeroBook]       = useState<BookItem | null>(null);
   const [activeGenre, setActiveGenre] = useState(GENRES[0].genre);
   const [moodBooks, setMoodBooks]     = useState<BookItem[]>([]);
   const [moodLoading, setMoodLoading] = useState(true);
+  const [selectedBook, setSelectedBook] = useState<BookItem | null>(null);
 
   const setLoaded = (id: string) =>
     setLoadingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
 
-  // Load all shelves on mount
   useEffect(() => {
     const load = async () => {
-      const results = await Promise.all(
-        SECTIONS.map(s => fetchBooks(s.query, 16))
-      );
+      const results = await Promise.all(SECTIONS.map(s => fetchBooks(s.query, 16)));
       const map: Record<string, BookItem[]> = {};
-      SECTIONS.forEach((s, i) => {
-        map[s.id] = results[i];
-        setLoaded(s.id);
-      });
+      SECTIONS.forEach((s, i) => { map[s.id] = results[i]; setLoaded(s.id); });
       setShelves(map);
-
-      // Featured wide cards
       const feat = await fetchBooks("self-help transformative life changing must read", 6);
       setFeatured(feat.filter(b => b.cover));
       setLoaded("featured");
-
-      // Hero book — pick one with a cover
-      const pool = [...results[0], ...results[1]].filter(b => b.cover);
-      if (pool.length) setHeroBook(pool[Math.floor(Math.random() * Math.min(6, pool.length))]);
     };
     load();
   }, []);
 
-  // Mood shelf reloads on genre change
   const loadMood = useCallback(async (genre: string) => {
     setMoodLoading(true);
     const books = await fetchBooks(genre, 16, "relevance");
@@ -257,13 +333,7 @@ export default function LandingPage() {
     setMoodLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadMood(activeGenre);
-  }, [activeGenre, loadMood]);
-
-  useEffect(() => {
-    if (!loadingIds.has("mood") || !moodLoading) setLoaded("mood");
-  }, [moodLoading]);
+  useEffect(() => { loadMood(activeGenre); }, [activeGenre, loadMood]);
 
   return (
     <>
@@ -320,6 +390,146 @@ export default function LandingPage() {
           50% { opacity: 0.3; }
         }
 
+        @keyframes modalIn {
+          from { opacity: 0; transform: translateY(24px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes backdropIn {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+
+        /* ── Modal ── */
+        .modal-backdrop {
+          position: fixed; inset: 0; z-index: 200;
+          background: rgba(8,8,10,0.82);
+          backdrop-filter: blur(12px);
+          display: flex; align-items: center; justify-content: center;
+          padding: 24px;
+          animation: backdropIn 0.2s ease both;
+        }
+
+        .modal {
+          position: relative;
+          background: var(--ink-2);
+          border: 1px solid var(--border-mid);
+          border-radius: 16px;
+          max-width: 720px; width: 100%;
+          max-height: 90vh; overflow-y: auto;
+          box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04);
+          animation: modalIn 0.28s cubic-bezier(0.22,1,0.36,1) both;
+        }
+
+        .modal-close {
+          position: absolute; top: 16px; right: 16px; z-index: 10;
+          width: 32px; height: 32px; border-radius: 50%;
+          background: var(--ink-3); border: 1px solid var(--border-mid);
+          color: var(--text-mid); display: flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: all 0.15s;
+        }
+        .modal-close:hover { background: var(--ink-4); color: var(--text); }
+
+        .modal-inner {
+          display: flex; gap: 32px; padding: 36px;
+        }
+
+        .modal-cover-col {
+          flex-shrink: 0; width: 160px;
+          display: flex; flex-direction: column; gap: 14px;
+        }
+
+        .modal-cover-wrap {
+          border-radius: 8px; overflow: hidden; aspect-ratio: 2/3;
+          box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.07);
+          background: var(--ink-3);
+        }
+        .modal-cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .modal-no-cover {
+          width: 100%; height: 100%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 3rem; opacity: 0.3;
+          background: linear-gradient(135deg, var(--ink-3), var(--ink-4));
+        }
+
+        .modal-rating {
+          display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+          font-size: 0.72rem; color: var(--text-mid);
+          justify-content: center; text-align: center;
+        }
+        .modal-rating-count { color: var(--text-dim); font-size: 0.65rem; width: 100%; text-align: center; }
+
+        .modal-info-col {
+          flex: 1; min-width: 0;
+          display: flex; flex-direction: column; gap: 10px;
+        }
+
+        .modal-tag {
+          font-family: var(--mono); font-size: 0.6rem;
+          letter-spacing: 0.14em; text-transform: uppercase;
+          color: var(--blue); padding: 3px 8px;
+          border: 1px solid rgba(74,144,217,0.25); border-radius: 3px;
+          background: rgba(74,144,217,0.06); width: fit-content;
+        }
+
+        .modal-title {
+          font-family: var(--serif); font-size: 1.8rem; font-weight: 400;
+          color: var(--text); line-height: 1.2; letter-spacing: -0.01em;
+        }
+
+        .modal-author {
+          font-size: 0.8rem; color: var(--gold); font-family: var(--mono);
+          letter-spacing: 0.04em;
+        }
+
+        .modal-desc-label {
+          font-family: var(--mono); font-size: 0.6rem;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          color: var(--text-dim); margin-top: 6px;
+          padding-top: 14px; border-top: 1px solid var(--border);
+        }
+
+        .modal-desc {
+          font-size: 0.88rem; color: var(--text-mid);
+          line-height: 1.75; flex: 1;
+        }
+        .modal-desc-empty { font-style: italic; opacity: 0.5; }
+
+        .modal-actions {
+          display: flex; gap: 10px; flex-wrap: wrap;
+          margin-top: 8px; padding-top: 16px;
+          border-top: 1px solid var(--border);
+        }
+
+        .modal-btn-primary {
+          display: inline-flex; align-items: center; gap: 7px;
+          font-family: var(--sans); font-size: 0.82rem; font-weight: 500;
+          padding: 10px 20px; border-radius: 6px;
+          background: linear-gradient(135deg, var(--blue), #6baee8);
+          color: white; border: none; cursor: pointer; text-decoration: none;
+          box-shadow: 0 4px 16px var(--blue-glow); transition: all 0.15s;
+        }
+        .modal-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(74,144,217,0.35); }
+
+        .modal-btn-secondary {
+          display: inline-flex; align-items: center; gap: 7px;
+          font-family: var(--sans); font-size: 0.82rem; font-weight: 500;
+          padding: 9px 18px; border-radius: 6px;
+          background: rgba(255,255,255,0.04); color: var(--text);
+          border: 1px solid var(--border-mid); cursor: pointer; text-decoration: none;
+          transition: all 0.15s;
+        }
+        .modal-btn-secondary:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
+
+        @media (max-width: 560px) {
+          .modal-inner { flex-direction: column; padding: 24px; }
+          .modal-cover-col { width: 100%; flex-direction: row; align-items: flex-start; gap: 16px; }
+          .modal-cover-wrap { width: 100px; flex-shrink: 0; }
+          .modal-rating { justify-content: flex-start; text-align: left; }
+          .modal-rating-count { text-align: left; }
+        }
+
+        /* ── Nav ── */
         .nav {
           position: fixed; top: 0; left: 0; right: 0; z-index: 100;
           height: 68px; padding: 0 48px;
@@ -342,7 +552,6 @@ export default function LandingPage() {
           font-family: var(--serif); font-size: 1.5rem; font-weight: 600;
           color: var(--text); letter-spacing: 0.01em;
         }
-
         .nav-name em { color: var(--blue); font-style: normal; }
 
         .nav-links { display: flex; align-items: center; gap: 8px; }
@@ -352,7 +561,6 @@ export default function LandingPage() {
           text-decoration: none; padding: 7px 14px; border-radius: 20px;
           border: 1px solid transparent; transition: all 0.15s; letter-spacing: 0.02em;
         }
-
         .nav-link:hover { color: var(--text); border-color: var(--border-mid); background: rgba(255,255,255,0.04); }
 
         .nav-cta {
@@ -361,9 +569,9 @@ export default function LandingPage() {
           background: linear-gradient(135deg, var(--blue), #6baee8);
           box-shadow: 0 4px 14px var(--blue-glow); transition: all 0.15s;
         }
-
         .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(74,144,217,0.3); }
 
+        /* ── Hero ── */
         .hero {
           height: 92vh; position: relative;
           display: flex; align-items: flex-end;
@@ -410,7 +618,6 @@ export default function LandingPage() {
           font-weight: 300; line-height: 1.05;
           color: var(--text); letter-spacing: -0.01em; margin-bottom: 18px;
         }
-
         .hero-title em { font-style: italic; color: var(--gold-light); }
 
         .hero-desc {
@@ -430,7 +637,6 @@ export default function LandingPage() {
           box-shadow: 0 8px 24px var(--blue-glow); transition: all 0.18s;
           letter-spacing: 0.02em;
         }
-
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(74,144,217,0.35); }
 
         .btn-secondary {
@@ -441,24 +647,22 @@ export default function LandingPage() {
           border: 1px solid var(--border-mid); cursor: pointer; text-decoration: none;
           transition: all 0.18s; letter-spacing: 0.02em;
         }
-
         .btn-secondary:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.2); }
 
         .hero-stats {
           display: flex; gap: 32px; margin-top: 44px;
           padding-top: 24px; border-top: 1px solid var(--border);
         }
-
         .hero-stat-num {
           font-family: var(--serif); font-size: 1.7rem; font-weight: 400;
           color: var(--text); letter-spacing: -0.02em; line-height: 1;
         }
-
         .hero-stat-label {
           font-size: 0.68rem; color: var(--text-dim); margin-top: 3px;
           text-transform: uppercase; letter-spacing: 0.09em;
         }
 
+        /* ── Editor's Pick ── */
         .hero-featured {
           position: absolute; right: 80px; bottom: 80px; z-index: 2;
           display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
@@ -471,25 +675,44 @@ export default function LandingPage() {
           color: var(--gold); display: flex; align-items: center; gap: 6px;
         }
 
+        .hero-pick-row { display: flex; align-items: flex-start; gap: 16px; }
+
         .hero-book-card {
-          width: 158px; border-radius: 8px; overflow: hidden;
+          width: 140px; border-radius: 8px; overflow: hidden;
           box-shadow: 0 24px 64px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.07);
-          cursor: pointer; transition: transform 0.28s;
+          cursor: pointer; transition: transform 0.28s; flex-shrink: 0;
         }
-
         .hero-book-card:hover { transform: scale(1.05) translateY(-5px); }
-
         .hero-book-card img { width: 100%; display: block; aspect-ratio: 2/3; object-fit: cover; }
 
-        .hero-book-placeholder {
-          width: 100%; aspect-ratio: 2/3;
-          background: linear-gradient(135deg, var(--ink-3), var(--ink-4));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 3rem; opacity: 0.5;
+        .hero-pick-info {
+          max-width: 180px; text-align: right;
+          display: flex; flex-direction: column; gap: 5px; padding-top: 4px;
         }
 
-        .sections { padding: 0 48px 80px; }
+        .hero-pick-title {
+          font-family: var(--serif); font-size: 0.92rem; font-weight: 600;
+          color: var(--text); line-height: 1.3;
+        }
 
+        .hero-pick-author {
+          font-size: 0.66rem; color: var(--gold);
+          font-family: var(--mono); letter-spacing: 0.04em;
+        }
+
+        .hero-pick-desc {
+          font-size: 0.72rem; color: var(--text-mid); line-height: 1.6;
+          display: -webkit-box; -webkit-line-clamp: 4;
+          -webkit-box-orient: vertical; overflow: hidden;
+        }
+
+        .hero-pick-rating {
+          display: flex; align-items: center; gap: 5px;
+          font-size: 0.66rem; color: var(--text-mid); justify-content: flex-end;
+        }
+
+        /* ── Sections ── */
+        .sections { padding: 0 48px 80px; }
         .section { margin-bottom: 52px; }
 
         .section-head {
@@ -510,7 +733,6 @@ export default function LandingPage() {
           font-family: var(--serif); font-size: 1.65rem; font-weight: 400;
           color: var(--text); letter-spacing: -0.01em; line-height: 1.15;
         }
-
         .section-title em { font-style: italic; color: var(--gold-light); }
 
         .genre-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
@@ -523,10 +745,10 @@ export default function LandingPage() {
           color: var(--text-mid); cursor: pointer; transition: all 0.15s;
           white-space: nowrap;
         }
-
         .genre-pill:hover { color: var(--text); background: rgba(74,144,217,0.08); border-color: rgba(74,144,217,0.3); }
         .genre-pill.active { color: var(--blue); background: rgba(74,144,217,0.1); border-color: rgba(74,144,217,0.35); }
 
+        /* ── Carousel ── */
         .carousel-wrap { position: relative; }
 
         .carousel {
@@ -534,7 +756,6 @@ export default function LandingPage() {
           scroll-snap-type: x mandatory; scrollbar-width: none;
           padding-bottom: 6px; -webkit-overflow-scrolling: touch;
         }
-
         .carousel::-webkit-scrollbar { display: none; }
 
         .carousel-arrow {
@@ -545,19 +766,18 @@ export default function LandingPage() {
           cursor: pointer; z-index: 5; backdrop-filter: blur(8px);
           transition: all 0.15s; opacity: 0;
         }
-
         .carousel-wrap:hover .carousel-arrow { opacity: 1; }
         .carousel-arrow:hover { background: rgba(74,144,217,0.18); border-color: var(--blue); }
         .carousel-arrow.left  { left: -20px; }
         .carousel-arrow.right { right: -20px; }
 
+        /* ── Book card ── */
         .book-card {
           flex-shrink: 0; width: 160px;
           scroll-snap-align: start; cursor: pointer;
           transition: transform 0.25s;
           animation: fadeUp 0.4s ease both;
         }
-
         .book-card:hover { transform: translateY(-7px); }
         .book-card:hover .book-cover-wrap { box-shadow: 0 20px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(74,144,217,0.22); }
 
@@ -566,12 +786,7 @@ export default function LandingPage() {
           background: var(--ink-3); box-shadow: 0 8px 24px rgba(0,0,0,0.35);
           transition: box-shadow 0.25s; position: relative; margin-bottom: 10px;
         }
-
-        .book-cover-wrap img {
-          width: 100%; height: 100%; object-fit: cover; display: block;
-          transition: transform 0.35s;
-        }
-
+        .book-cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.35s; }
         .book-card:hover .book-cover-wrap img { transform: scale(1.04); }
 
         .book-no-cover {
@@ -580,53 +795,48 @@ export default function LandingPage() {
           gap: 8px; padding: 12px;
           background: linear-gradient(135deg, var(--ink-3), var(--ink-4));
         }
-
         .book-no-cover-title {
-          font-family: var(--serif); font-size: 0.7rem;
-          color: var(--text-mid); text-align: center; line-height: 1.4;
+          font-family: var(--serif); font-size: 0.7rem; color: var(--text-mid);
+          text-align: center; line-height: 1.4;
           display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
         }
 
         .book-cover-overlay {
           position: absolute; inset: 0;
-          background: rgba(13,13,15,0.68);
-          display: flex; align-items: center; justify-content: center;
+          background: rgba(13,13,15,0.72);
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
           opacity: 0; transition: opacity 0.2s;
         }
-
         .book-card:hover .book-cover-overlay { opacity: 1; }
 
         .book-play-circle {
-          width: 48px; height: 48px; border-radius: 50%;
+          width: 40px; height: 40px; border-radius: 50%;
           background: rgba(74,144,217,0.92);
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 4px 20px rgba(74,144,217,0.4);
           transform: scale(0.8); transition: transform 0.2s;
         }
-
         .book-card:hover .book-play-circle { transform: scale(1); }
 
-        .book-meta { padding: 0 2px; }
+        .book-overlay-hint {
+          font-size: 0.62rem; color: rgba(255,255,255,0.7);
+          font-family: var(--mono); letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
 
+        .book-meta { padding: 0 2px; }
         .book-title {
           font-family: var(--serif); font-size: 0.88rem; font-weight: 400;
           color: var(--text); line-height: 1.3;
           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
           overflow: hidden; margin-bottom: 4px;
         }
-
-        .book-author {
-          font-size: 0.68rem; color: var(--text-dim);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px;
-        }
-
+        .book-author { font-size: 0.68rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
         .book-rating { display: flex; align-items: center; gap: 4px; font-size: 0.66rem; color: var(--text-mid); }
-
         .stars { color: var(--gold); font-size: 0.64rem; letter-spacing: 1px; }
 
-        .featured-grid {
-          display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
-        }
+        /* ── Featured cards ── */
+        .featured-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 
         .featured-card {
           border-radius: 10px; overflow: hidden;
@@ -634,7 +844,6 @@ export default function LandingPage() {
           display: flex; cursor: pointer; transition: all 0.2s;
           animation: fadeUp 0.4s ease both;
         }
-
         .featured-card:hover { border-color: var(--border-mid); box-shadow: 0 8px 32px rgba(0,0,0,0.3); transform: translateY(-2px); }
 
         .featured-card-cover { width: 90px; flex-shrink: 0; background: var(--ink-3); }
@@ -654,11 +863,11 @@ export default function LandingPage() {
           padding: 5px 11px; border-radius: 4px;
           border: 1px solid rgba(74,144,217,0.25);
           background: rgba(74,144,217,0.06); width: fit-content;
-          transition: all 0.15s; text-decoration: none;
+          transition: all 0.15s; cursor: pointer;
         }
-
         .featured-card:hover .featured-card-read { background: rgba(74,144,217,0.14); border-color: rgba(74,144,217,0.4); }
 
+        /* ── CTA banner ── */
         .cta-banner {
           margin: 0 48px 80px; border-radius: 16px; padding: 60px 64px;
           background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
@@ -666,23 +875,21 @@ export default function LandingPage() {
           display: flex; align-items: center; justify-content: space-between; gap: 40px;
           position: relative; overflow: hidden;
         }
-
         .cta-banner::before {
           content: ''; position: absolute; top: -60%; right: -10%;
           width: 400px; height: 400px; border-radius: 50%;
           background: radial-gradient(circle, rgba(74,144,217,0.12) 0%, transparent 70%);
           pointer-events: none;
         }
-
         .cta-title { font-family: var(--serif); font-size: 2.1rem; font-weight: 300; color: var(--text); line-height: 1.25; letter-spacing: -0.01em; }
         .cta-title em { font-style: italic; color: var(--gold-light); }
         .cta-sub { font-size: 0.88rem; color: var(--text-mid); max-width: 360px; line-height: 1.65; margin-top: 10px; }
 
+        /* ── Footer ── */
         .footer {
           padding: 28px 48px; border-top: 1px solid var(--border);
           display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
         }
-
         .footer-brand { font-family: var(--serif); font-size: 1.2rem; color: var(--text-dim); }
         .footer-brand em { color: var(--blue); font-style: normal; }
         .footer-note { font-size: 0.68rem; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.05em; }
@@ -705,6 +912,11 @@ export default function LandingPage() {
           .genre-row { gap: 6px; }
         }
       `}</style>
+
+      {/* Book Detail Modal */}
+      {selectedBook && (
+        <BookModal book={selectedBook} onClose={() => setSelectedBook(null)} />
+      )}
 
       {/* Nav */}
       <nav className="nav">
@@ -763,23 +975,29 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {heroBook && (
-          <div className="hero-featured">
-            <div className="hero-featured-label">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              Editor&apos;s pick
+        {/* Editor's Pick */}
+        <div className="hero-featured">
+          <div className="hero-featured-label">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Editor&apos;s pick
+          </div>
+          <div className="hero-pick-row">
+            <div className="hero-book-card" onClick={() => setSelectedBook(EDITOR_PICK)}>
+              <img src={EDITOR_PICK.cover!} alt={EDITOR_PICK.title} />
             </div>
-            <div
-              className="hero-book-card"
-              onClick={() => heroBook.previewLink !== "#" && window.open(heroBook.previewLink, "_blank")}
-            >
-              {heroBook.cover
-                ? <img src={heroBook.cover} alt={heroBook.title} />
-                : <div className="hero-book-placeholder">📖</div>
-              }
+            <div className="hero-pick-info">
+              <p className="hero-pick-title">{EDITOR_PICK.title}</p>
+              <p className="hero-pick-author">{EDITOR_PICK.authors}</p>
+              <p className="hero-pick-desc">{EDITOR_PICK.description}</p>
+              <div className="hero-pick-rating">
+                <span className="stars">{starStr(EDITOR_PICK.rating!)}</span>
+                <span>{EDITOR_PICK.rating?.toFixed(1)}</span>
+              </div>
             </div>
           </div>
-        )}
+        </div>
       </section>
 
       {/* Main sections */}
@@ -802,11 +1020,11 @@ export default function LandingPage() {
               </button>
             ))}
           </div>
-          <Carousel books={moodBooks} loading={moodLoading} id="moodShelf" />
+          <Carousel books={moodBooks} loading={moodLoading} id="moodShelf" onSelect={setSelectedBook} />
         </section>
 
         {/* Remaining shelves */}
-        {SECTIONS.filter(s => s.id !== "mood").map(s => (
+        {SECTIONS.map(s => (
           <section key={s.id} className="section">
             <div className="section-head">
               <span className="section-tag">{s.tag}</span>
@@ -816,6 +1034,7 @@ export default function LandingPage() {
               books={shelves[s.id] || []}
               loading={loadingIds.has(s.id)}
               id={s.id}
+              onSelect={setSelectedBook}
             />
           </section>
         ))}
@@ -834,7 +1053,7 @@ export default function LandingPage() {
             </div>
           ) : (
             <div className="featured-grid">
-              {featured.map(b => <FeaturedCard key={b.id} book={b} />)}
+              {featured.map(b => <FeaturedCard key={b.id} book={b} onSelect={setSelectedBook} />)}
             </div>
           )}
         </section>
