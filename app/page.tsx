@@ -24,29 +24,53 @@ type Section = {
   query: string;
 };
 
-// Config 
+// Config
 const GBOOKS_KEY = process.env.NEXT_PUBLIC_GOOGLE_BOOKS_API_KEY || "";
 const GBOOKS_URL = "https://www.googleapis.com/books/v1/volumes";
 
 const SECTIONS: Section[] = [
-  { id: "mood",     tag: "Curated",    title: "When the mind needs",  titleEm: "quiet",        query: "mindfulness anxiety stress relief mental health" },
-  { id: "top",      tag: "Top Rated",  title: "Universally",          titleEm: "loved",         query: "bestseller award winning personal growth" },
-  { id: "classics", tag: "Timeless",   title: "The classics —",       titleEm: "always here",   query: "classic literature Tolstoy Austen Dickens Dostoevsky" },
-  { id: "gems",     tag: "Discover",   title: "Hidden",               titleEm: "gems",          query: "underrated hidden gem literary fiction" },
+  {
+    id: "mood",
+    tag: "Curated",
+    title: "When the mind needs",
+    titleEm: "quiet",
+    query: "subject:self-help mindfulness anxiety stress",
+  },
+  {
+    id: "top",
+    tag: "Top Rated",
+    title: "Universally",
+    titleEm: "loved",
+    query: "subject:self-help intitle:bestseller personal development",
+  },
+  {
+    id: "classics",
+    tag: "Timeless",
+    title: "The classics —",
+    titleEm: "always here",
+    query: "stoicism marcus aurelius dale carnegie napoleon hill self-help classic",
+  },
+  {
+    id: "gems",
+    tag: "Discover",
+    title: "Hidden",
+    titleEm: "gems",
+    query: "subject:self-help personal-development underrated hidden gem",
+  },
 ];
 
 const GENRES = [
-  { label: "🧘 Self-Help",    genre: "self-help" },
-  { label: "🧠 Psychology",   genre: "psychology" },
-  { label: "💭 Philosophy",   genre: "philosophy" },
-  { label: "📖 Fiction",      genre: "fiction" },
-  { label: "🌿 Mindfulness",  genre: "mindfulness meditation" },
-  { label: "👤 Biography",    genre: "biography memoir" },
-  { label: "🔬 Science",      genre: "popular science" },
-  { label: "🏛 History",      genre: "history" },
+  { label: "🧘 Mindfulness",   genre: "subject:self-help mindfulness meditation" },
+  { label: "💪 Productivity",  genre: "subject:self-help productivity habits" },
+  { label: "🧠 Psychology",    genre: "subject:psychology self-help" },
+  { label: "💭 Philosophy",    genre: "subject:philosophy stoicism" },
+  { label: "❤️ Relationships", genre: "subject:self-help relationships" },
+  { label: "💰 Finance",       genre: "subject:self-help personal finance" },
+  { label: "🌿 Healing",       genre: "subject:self-help anxiety depression healing" },
+  { label: "🚀 Growth",        genre: "subject:self-help success motivation" },
 ];
 
-// API helpers 
+// API helpers
 async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance"): Promise<BookItem[]> {
   try {
     const params = new URLSearchParams({
@@ -59,7 +83,9 @@ async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance")
     });
     const res  = await fetch(`${GBOOKS_URL}?${params}`);
     const data = await res.json();
-    return (data.items || []).map(parseBook);
+    return (data.items || [])
+      .map(parseBook)
+      .filter((b: BookItem) => b.cover && b.rating && b.rating >= 3.5);
   } catch {
     return [];
   }
@@ -85,8 +111,7 @@ function starStr(rating: number): string {
   return "★".repeat(full) + "☆".repeat(5 - full);
 }
 
-// Sub-components 
-
+// Sub-components
 function SkeletonCard() {
   return (
     <div style={{ flexShrink: 0, width: 160 }}>
@@ -186,14 +211,14 @@ function Carousel({ books, loading, id }: { books: BookItem[]; loading: boolean;
   );
 }
 
-// Main Page 
+// Main page
 export default function LandingPage() {
-  const [shelves, setShelves]       = useState<Record<string, BookItem[]>>({});
-  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set(SECTIONS.map(s => s.id).concat(["featured", "mood"])));
-  const [featured, setFeatured]     = useState<BookItem[]>([]);
-  const [heroBook, setHeroBook]     = useState<BookItem | null>(null);
+  const [shelves, setShelves]         = useState<Record<string, BookItem[]>>({});
+  const [loadingIds, setLoadingIds]   = useState<Set<string>>(new Set(SECTIONS.map(s => s.id).concat(["featured", "mood"])));
+  const [featured, setFeatured]       = useState<BookItem[]>([]);
+  const [heroBook, setHeroBook]       = useState<BookItem | null>(null);
   const [activeGenre, setActiveGenre] = useState(GENRES[0].genre);
-  const [moodBooks, setMoodBooks]   = useState<BookItem[]>([]);
+  const [moodBooks, setMoodBooks]     = useState<BookItem[]>([]);
   const [moodLoading, setMoodLoading] = useState(true);
 
   const setLoaded = (id: string) =>
@@ -212,13 +237,13 @@ export default function LandingPage() {
       });
       setShelves(map);
 
-      // Featured (wide cards)
-      const feat = await fetchBooks("transformative life changing nonfiction must read", 6);
-      setFeatured(feat);
+      // Featured wide cards
+      const feat = await fetchBooks("self-help transformative life changing must read", 6);
+      setFeatured(feat.filter(b => b.cover && b.rating));
       setLoaded("featured");
 
-      // Hero book — pick a rated one with a cover
-      const pool = [...results[0], ...results[1]].filter(b => b.cover && b.rating);
+      // Hero book — pick a highly rated one with a cover
+      const pool = [...results[0], ...results[1]].filter(b => b.cover && b.rating && b.rating >= 4);
       if (pool.length) setHeroBook(pool[Math.floor(Math.random() * Math.min(6, pool.length))]);
     };
     load();
@@ -227,8 +252,8 @@ export default function LandingPage() {
   // Mood shelf reloads on genre change
   const loadMood = useCallback(async (genre: string) => {
     setMoodLoading(true);
-    const books = await fetchBooks(`${genre} emotions wellbeing`, 16);
-    setMoodBooks(books);
+    const books = await fetchBooks(genre, 16, "relevance");
+    setMoodBooks(books.filter(b => b.cover && b.rating));
     setMoodLoading(false);
   }, []);
 
@@ -295,7 +320,7 @@ export default function LandingPage() {
           50% { opacity: 0.3; }
         }
 
-        /* ── NAV ── */
+        // Nav
         .nav {
           position: fixed; top: 0; left: 0; right: 0; z-index: 100;
           height: 68px; padding: 0 48px;
@@ -343,7 +368,7 @@ export default function LandingPage() {
 
         .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(74,144,217,0.3); }
 
-        /* ── HERO ── */
+        // Hero
         .hero {
           height: 92vh; position: relative;
           display: flex; align-items: flex-end;
@@ -440,7 +465,7 @@ export default function LandingPage() {
           text-transform: uppercase; letter-spacing: 0.09em;
         }
 
-        /* Hero featured book */
+        // Hero featured book
         .hero-featured {
           position: absolute; right: 80px; bottom: 80px; z-index: 2;
           display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
@@ -472,7 +497,7 @@ export default function LandingPage() {
           font-size: 3rem; opacity: 0.5;
         }
 
-        /* ── SECTIONS ── */
+        // Sections
         .sections { padding: 0 48px 80px; }
 
         .section { margin-bottom: 52px; }
@@ -498,7 +523,7 @@ export default function LandingPage() {
 
         .section-title em { font-style: italic; color: var(--gold-light); }
 
-        /* ── GENRE PILLS ── */
+        // Genre pills
         .genre-row {
           display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px;
         }
@@ -515,7 +540,7 @@ export default function LandingPage() {
         .genre-pill:hover { color: var(--text); background: rgba(74,144,217,0.08); border-color: rgba(74,144,217,0.3); }
         .genre-pill.active { color: var(--blue); background: rgba(74,144,217,0.1); border-color: rgba(74,144,217,0.35); }
 
-        /* ── CAROUSEL ── */
+        // Carousel
         .carousel-wrap { position: relative; }
 
         .carousel {
@@ -540,7 +565,7 @@ export default function LandingPage() {
         .carousel-arrow.left  { left: -20px; }
         .carousel-arrow.right { right: -20px; }
 
-        /* ── BOOK CARD ── */
+        // Book card
         .book-card {
           flex-shrink: 0; width: 160px;
           scroll-snap-align: start; cursor: pointer;
@@ -614,7 +639,7 @@ export default function LandingPage() {
 
         .stars { color: var(--gold); font-size: 0.64rem; letter-spacing: 1px; }
 
-        /* ── FEATURED WIDE CARDS ── */
+        // Featured wide cards
         .featured-grid {
           display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
         }
@@ -650,7 +675,7 @@ export default function LandingPage() {
 
         .featured-card:hover .featured-card-read { background: rgba(74,144,217,0.14); border-color: rgba(74,144,217,0.4); }
 
-        /* ── CTA BANNER ── */
+        // CTA banner
         .cta-banner {
           margin: 0 48px 80px; border-radius: 16px; padding: 60px 64px;
           background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
@@ -670,7 +695,7 @@ export default function LandingPage() {
         .cta-title em { font-style: italic; color: var(--gold-light); }
         .cta-sub { font-size: 0.88rem; color: var(--text-mid); max-width: 360px; line-height: 1.65; margin-top: 10px; }
 
-        /* ── FOOTER ── */
+        // Footer
         .footer {
           padding: 28px 48px; border-top: 1px solid var(--border);
           display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
@@ -680,7 +705,7 @@ export default function LandingPage() {
         .footer-brand em { color: var(--blue); font-style: normal; }
         .footer-note { font-size: 0.68rem; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.05em; }
 
-        /* ── RESPONSIVE ── */
+        // Responsive
         @media (max-width: 900px) {
           .nav { padding: 0 24px; }
           .hero { padding: 0 24px 60px; }
@@ -700,7 +725,7 @@ export default function LandingPage() {
         }
       `}</style>
 
-      {/* NAV */}
+      {/* Nav */}
       <nav className="nav">
         <Link href="/" className="nav-brand">
           <div className="nav-logo">
@@ -718,7 +743,7 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* HERO */}
+      {/* Hero */}
       <section className="hero">
         <div className="hero-bg" />
         <div className="hero-overlay" />
@@ -777,7 +802,7 @@ export default function LandingPage() {
         )}
       </section>
 
-      {/* MAIN SECTIONS */}
+      {/* Main sections */}
       <main className="sections">
 
         {/* Genre pills + mood shelf */}
@@ -800,7 +825,7 @@ export default function LandingPage() {
           <Carousel books={moodBooks} loading={moodLoading} id="moodShelf" />
         </section>
 
-        {/* Remaining sections */}
+        {/* Remaining shelves */}
         {SECTIONS.filter(s => s.id !== "mood").map(s => (
           <section key={s.id} className="section">
             <div className="section-head">
@@ -836,7 +861,7 @@ export default function LandingPage() {
 
       </main>
 
-      {/* CTA BANNER */}
+      {/* CTA banner */}
       <div className="cta-banner">
         <div>
           <h2 className="cta-title">Tell Atlas how you feel.<br /><em>It&apos;ll find your book.</em></h2>
@@ -848,7 +873,7 @@ export default function LandingPage() {
         </Link>
       </div>
 
-      {/* FOOTER */}
+      {/* Footer */}
       <footer className="footer">
         <div className="footer-brand">At<em>las</em></div>
         <div className="footer-note">Powered by Google Books · ElevenLabs · Gemini · Project Gutenberg</div>
