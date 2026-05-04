@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { MongoClient, Collection } from "mongodb";
-const pdfParse = require("pdf-parse");
+import * as pdfParse from "pdf-parse";
 import * as dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 

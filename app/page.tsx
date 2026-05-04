@@ -51,7 +51,7 @@ const SECTIONS: Section[] = [
     tag: "Timeless",
     title: "The classics —",
     titleEm: "always here",
-    query: "stoicism marcus aurelius dale carnegie napoleon hill self-help classic",
+    query: "dale carnegie napoleon hill self-help classic",
   },
   {
     id: "gems",
@@ -111,7 +111,7 @@ function starStr(rating: number): string {
   return "★".repeat(full) + "☆".repeat(5 - full);
 }
 
-// ── Book Detail Modal ──────────────────────────────────────────────────────
+// Book Detail Modal 
 
 function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   useEffect(() => {
@@ -201,7 +201,7 @@ function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   );
 }
 
-// ── Skeleton & Cards ───────────────────────────────────────────────────────
+// Skeleton & Cards 
 
 function SkeletonCard() {
   return (
@@ -299,7 +299,7 @@ function Carousel({ books, loading, id, onSelect }: { books: BookItem[]; loading
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────────────────────
+// Main Page 
 
 export default function LandingPage() {
   const [shelves, setShelves]         = useState<Record<string, BookItem[]>>({});
@@ -944,7 +944,7 @@ export default function LandingPage() {
         <div className="hero-content">
           <div className="hero-eyebrow">
             <span className="hero-dot" />
-            Your AI Reading Sanctuary
+            Your AI Bibliotherapist
           </div>
           <h1 className="hero-title">
             Books that <em>heal,</em><br />stories that stay
@@ -961,7 +961,7 @@ export default function LandingPage() {
           </div>
           <div className="hero-stats">
             <div>
-              <div className="hero-stat-num">70k+</div>
+              <div className="hero-stat-num">150k+</div>
               <div className="hero-stat-label">Books available</div>
             </div>
             <div>
@@ -969,7 +969,7 @@ export default function LandingPage() {
               <div className="hero-stat-label">AI narration</div>
             </div>
             <div>
-              <div className="hero-stat-num">Gemini</div>
+              <div className="hero-stat-num">Gemini Multi Agents</div>
               <div className="hero-stat-label">Therapist AI</div>
             </div>
           </div>
