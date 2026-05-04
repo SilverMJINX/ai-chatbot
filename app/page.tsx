@@ -85,7 +85,7 @@ async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance")
     const data = await res.json();
     return (data.items || [])
       .map(parseBook)
-      .filter((b: BookItem) => b.cover && b.rating && b.rating >= 3.5);
+      .filter((b: BookItem) => b.cover);
   } catch {
     return [];
   }
@@ -239,11 +239,11 @@ export default function LandingPage() {
 
       // Featured wide cards
       const feat = await fetchBooks("self-help transformative life changing must read", 6);
-      setFeatured(feat.filter(b => b.cover && b.rating));
+      setFeatured(feat.filter(b => b.cover));
       setLoaded("featured");
 
-      // Hero book — pick a highly rated one with a cover
-      const pool = [...results[0], ...results[1]].filter(b => b.cover && b.rating && b.rating >= 4);
+      // Hero book — pick one with a cover
+      const pool = [...results[0], ...results[1]].filter(b => b.cover);
       if (pool.length) setHeroBook(pool[Math.floor(Math.random() * Math.min(6, pool.length))]);
     };
     load();
@@ -253,7 +253,7 @@ export default function LandingPage() {
   const loadMood = useCallback(async (genre: string) => {
     setMoodLoading(true);
     const books = await fetchBooks(genre, 16, "relevance");
-    setMoodBooks(books.filter(b => b.cover && b.rating));
+    setMoodBooks(books.filter(b => b.cover));
     setMoodLoading(false);
   }, []);
 
@@ -320,7 +320,6 @@ export default function LandingPage() {
           50% { opacity: 0.3; }
         }
 
-        /* Nav */
         .nav {
           position: fixed; top: 0; left: 0; right: 0; z-index: 100;
           height: 68px; padding: 0 48px;
@@ -330,16 +329,13 @@ export default function LandingPage() {
           border-bottom: 1px solid var(--border);
         }
 
-        .nav-brand {
-          display: flex; align-items: center; gap: 10px; text-decoration: none;
-        }
+        .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
 
         .nav-logo {
           width: 32px; height: 32px; border-radius: 9px;
           background: linear-gradient(135deg, var(--blue), #6baee8);
           display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 16px var(--blue-glow);
-          flex-shrink: 0;
+          box-shadow: 0 4px 16px var(--blue-glow); flex-shrink: 0;
         }
 
         .nav-name {
@@ -368,7 +364,6 @@ export default function LandingPage() {
 
         .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(74,144,217,0.3); }
 
-        /* Hero */
         .hero {
           height: 92vh; position: relative;
           display: flex; align-items: flex-end;
@@ -391,8 +386,7 @@ export default function LandingPage() {
         }
 
         .hero-content {
-          position: relative; z-index: 2;
-          max-width: 600px;
+          position: relative; z-index: 2; max-width: 600px;
           animation: fadeUp 1.1s cubic-bezier(0.22,1,0.36,1) both;
         }
 
@@ -465,7 +459,6 @@ export default function LandingPage() {
           text-transform: uppercase; letter-spacing: 0.09em;
         }
 
-        /* Hero featured book */
         .hero-featured {
           position: absolute; right: 80px; bottom: 80px; z-index: 2;
           display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
@@ -486,9 +479,7 @@ export default function LandingPage() {
 
         .hero-book-card:hover { transform: scale(1.05) translateY(-5px); }
 
-        .hero-book-card img {
-          width: 100%; display: block; aspect-ratio: 2/3; object-fit: cover;
-        }
+        .hero-book-card img { width: 100%; display: block; aspect-ratio: 2/3; object-fit: cover; }
 
         .hero-book-placeholder {
           width: 100%; aspect-ratio: 2/3;
@@ -497,7 +488,6 @@ export default function LandingPage() {
           font-size: 3rem; opacity: 0.5;
         }
 
-        /* Sections */
         .sections { padding: 0 48px 80px; }
 
         .section { margin-bottom: 52px; }
@@ -523,10 +513,7 @@ export default function LandingPage() {
 
         .section-title em { font-style: italic; color: var(--gold-light); }
 
-        /* Genre pills */
-        .genre-row {
-          display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px;
-        }
+        .genre-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
 
         .genre-pill {
           font-family: var(--sans); font-size: 0.78rem; font-weight: 400;
@@ -540,7 +527,6 @@ export default function LandingPage() {
         .genre-pill:hover { color: var(--text); background: rgba(74,144,217,0.08); border-color: rgba(74,144,217,0.3); }
         .genre-pill.active { color: var(--blue); background: rgba(74,144,217,0.1); border-color: rgba(74,144,217,0.35); }
 
-        /* Carousel */
         .carousel-wrap { position: relative; }
 
         .carousel {
@@ -565,7 +551,6 @@ export default function LandingPage() {
         .carousel-arrow.left  { left: -20px; }
         .carousel-arrow.right { right: -20px; }
 
-        /* Book card */
         .book-card {
           flex-shrink: 0; width: 160px;
           scroll-snap-align: start; cursor: pointer;
@@ -639,7 +624,6 @@ export default function LandingPage() {
 
         .stars { color: var(--gold); font-size: 0.64rem; letter-spacing: 1px; }
 
-        /* Featured wide cards */
         .featured-grid {
           display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
         }
@@ -675,7 +659,6 @@ export default function LandingPage() {
 
         .featured-card:hover .featured-card-read { background: rgba(74,144,217,0.14); border-color: rgba(74,144,217,0.4); }
 
-        /* CTA banner */
         .cta-banner {
           margin: 0 48px 80px; border-radius: 16px; padding: 60px 64px;
           background: linear-gradient(135deg, var(--ink-2), var(--ink-3));
@@ -695,7 +678,6 @@ export default function LandingPage() {
         .cta-title em { font-style: italic; color: var(--gold-light); }
         .cta-sub { font-size: 0.88rem; color: var(--text-mid); max-width: 360px; line-height: 1.65; margin-top: 10px; }
 
-        /* Footer */
         .footer {
           padding: 28px 48px; border-top: 1px solid var(--border);
           display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
@@ -705,7 +687,6 @@ export default function LandingPage() {
         .footer-brand em { color: var(--blue); font-style: normal; }
         .footer-note { font-size: 0.68rem; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.05em; }
 
-        /* Responsive */
         @media (max-width: 900px) {
           .nav { padding: 0 24px; }
           .hero { padding: 0 24px 60px; }
@@ -782,7 +763,6 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Hero featured book */}
         {heroBook && (
           <div className="hero-featured">
             <div className="hero-featured-label">
