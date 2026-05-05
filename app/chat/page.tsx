@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
 import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 import Link from "next/link";
 
@@ -19,7 +20,6 @@ type BookRecommendation = {
   reason: string;
 };
 
-const USERNAME = "Admin";
 const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
 const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
 
@@ -35,12 +35,7 @@ async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
       body: JSON.stringify({
         text,
         model_id: "eleven_turbo_v2_5",
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.8,
-          style: 0.2,
-          use_speaker_boost: true,
-        },
+        voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true },
       }),
     }
   );
@@ -52,21 +47,80 @@ async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
   return new Audio(URL.createObjectURL(blob));
 }
 
-// Book Reader Modal 
+// ── User Menu ──────────────────────────────────────────────────────────────
+function UserMenu({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const initial = name?.charAt(0).toUpperCase() || "U";
+
+  return (
+    <div className="user-menu-wrap" ref={ref}>
+      <button className="user-menu-btn" onClick={() => setOpen(o => !o)}>
+        <div className="user-avatar-nav">{initial}</div>
+        <span className="user-name-nav">{name}</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div className="user-dropdown">
+          <Link href="/chat" className="user-dropdown-item" onClick={() => setOpen(false)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            Chat with Atlas
+          </Link>
+          <Link href="/books" className="user-dropdown-item" onClick={() => setOpen(false)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+            My Library
+          </Link>
+          <div className="user-dropdown-divider" />
+          <button
+            className="user-dropdown-item user-dropdown-signout"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Waveform ───────────────────────────────────────────────────────────────
 function WaveformIcon() {
   return (
     <svg width="14" height="12" viewBox="0 0 28 20" fill="currentColor">
       {[3, 8, 13, 18, 23].map((x, i) => (
         <rect key={x} x={x} y={i % 2 === 0 ? 4 : 0} width="3"
           height={i % 2 === 0 ? 12 : 20} rx="1.5"
-          style={{ animation: "waveBar 0.9s ease-in-out infinite",
-            animationDelay: `${i * 0.12}s`, transformOrigin: "center" }}
+          style={{ animation: "waveBar 0.9s ease-in-out infinite", animationDelay: `${i * 0.12}s`, transformOrigin: "center" }}
         />
       ))}
     </svg>
   );
 }
 
+// ── Book Reader Modal ──────────────────────────────────────────────────────
 function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () => void }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -78,8 +132,7 @@ function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () =
   const current = sections[section] ?? "";
 
   useEffect(() => {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     fetch(`/api/books/${book.id}/text`)
       .then(r => r.ok ? r.text() : Promise.reject())
       .then(t => setText(t))
@@ -88,26 +141,31 @@ function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () =
     return () => stop();
   }, [book.id]);
 
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleKey);
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", handleKey); document.body.style.overflow = ""; };
+  }, [onClose]);
+
   return (
-    <div className="reader-overlay" onClick={onClose}>
-      <div className="reader-panel" onClick={e => e.stopPropagation()}>
-        <div className="reader-header">
-          <div className="reader-header-left">
-            <div className="ai-avatar-lg">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <div className="modal-book-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                 <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
                 <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
               </svg>
             </div>
             <div>
-              <h2 className="reader-title">{book.title}</h2>
-              <p className="reader-author">{book.authors.map(a => a.name).join(", ")}</p>
-              {book.reason && (
-                <p className="reader-reason">💡 {book.reason}</p>
-              )}
+              <h2 className="modal-book-title">{book.title}</h2>
+              <p className="modal-book-author">{book.authors.map(a => a.name).join(", ")}</p>
+              {book.reason && <p className="modal-book-reason">💡 {book.reason}</p>}
             </div>
           </div>
-          <button className="reader-close-btn" onClick={onClose} type="button">
+          <button className="modal-close" onClick={onClose} type="button">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -115,45 +173,33 @@ function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () =
         </div>
 
         {!loading && !error && sections.length > 0 && (
-          <div className="reader-controls">
+          <div className="modal-controls">
             <button
-              className={`tts-btn ${status === "playing" ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
+              className={`tts-btn${status === "playing" ? " tts-playing" : ""}${status === "loading" ? " tts-loading" : ""}`}
               onClick={() => status === "playing" ? stop() : speak(current)}
               type="button"
             >
-              {status === "loading" && (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
-                  <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
-                </svg>
-              )}
+              {status === "loading" && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>}
               {status === "playing" && <><WaveformIcon /><span>Stop</span></>}
-              {status === "idle" && (
-                <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>
-              )}
+              {status === "idle" && <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>}
             </button>
             <span className="tts-label">ElevenLabs TTS</span>
-            <div className="reader-nav">
-              <button className="chip chip-blue reader-nav-btn"
-                disabled={section === 0}
-                onClick={() => { stop(); setSection(s => s - 1); }} type="button">← Prev</button>
-              <span className="reader-section-label">Part {section + 1} of {sections.length}</span>
-              <button className="chip chip-blue reader-nav-btn"
-                disabled={section >= sections.length - 1}
-                onClick={() => { stop(); setSection(s => s + 1); }} type="button">Next →</button>
+            <div className="modal-nav">
+              <button className="nav-chip" disabled={section === 0} onClick={() => { stop(); setSection(s => s - 1); }} type="button">← Prev</button>
+              <span className="tts-label">Part {section + 1} of {sections.length}</span>
+              <button className="nav-chip" disabled={section >= sections.length - 1} onClick={() => { stop(); setSection(s => s + 1); }} type="button">Next →</button>
             </div>
           </div>
         )}
 
-        <div className="reader-body">
+        <div className="modal-body">
           {loading && (
-            <div className="reader-status">
-              <div className="typing-bubble" style={{ justifyContent: "center" }}>
-                <span className="dot"/><span className="dot"/><span className="dot"/>
-              </div>
-              <p style={{ marginTop: 12 }}>Loading book text…</p>
+            <div className="modal-status">
+              <div className="typing-dots"><span className="dot"/><span className="dot"/><span className="dot"/></div>
+              <p style={{ marginTop: 12, color: "var(--text-mid)" }}>Loading book text…</p>
             </div>
           )}
-          {error && <p className="reader-status reader-error">{error}</p>}
+          {error && <p className="modal-status" style={{ color: "#f87171" }}>{error}</p>}
           {!loading && !error && <pre className="reader-text">{current}</pre>}
         </div>
       </div>
@@ -161,7 +207,7 @@ function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () =
   );
 }
 
-// Book Recommendation Cards 
+// ── Book Cards ─────────────────────────────────────────────────────────────
 function BookCards({ books, onOpen }: { books: BookRecommendation[]; onOpen: (b: BookRecommendation) => void }) {
   return (
     <div className="book-recs">
@@ -180,24 +226,24 @@ function BookCards({ books, onOpen }: { books: BookRecommendation[]; onOpen: (b:
   );
 }
 
-// Typing Indicator 
+// ── Typing Indicator ───────────────────────────────────────────────────────
 function TypingIndicator() {
   return (
     <div className="msg-row ai-row">
       <div className="ai-avatar">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
           <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
           <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
         </svg>
       </div>
-      <div className="bubble ai-bubble typing-bubble">
+      <div className="bubble ai-bubble typing-dots">
         <span className="dot"/><span className="dot"/><span className="dot"/>
       </div>
     </div>
   );
 }
 
-// TTS Button 
+// ── TTS Button ─────────────────────────────────────────────────────────────
 function TTSButton({ text }: { text: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -225,32 +271,30 @@ function TTSButton({ text }: { text: string }) {
 
   return (
     <button
-      className={`tts-btn ${status === "playing" ? "tts-playing" : ""} ${status === "loading" ? "tts-loading" : ""}`}
+      className={`tts-btn${status === "playing" ? " tts-playing" : ""}${status === "loading" ? " tts-loading" : ""}`}
       onClick={handleClick}
-      title={status === "playing" ? "Stop audio" : status === "loading" ? "Loading audio…" : "Listen to this message"}
+      title={status === "playing" ? "Stop audio" : status === "loading" ? "Loading…" : "Listen"}
       type="button"
     >
-      {status === "loading" && (
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin">
-          <path d="M21 12a9 9 0 1 1-6.22-8.56"/>
-        </svg>
-      )}
+      {status === "loading" && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>}
       {status === "playing" && <><WaveformIcon /><span>Stop</span></>}
-      {status === "idle" && (
-        <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>
-      )}
+      {status === "idle" && <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Listen</span></>}
     </button>
   );
 }
 
-// Chat Message
-function ChatMessage({ message, onOpenBook }: { message: Message; onOpenBook: (b: BookRecommendation) => void }) {
+// ── Chat Message ───────────────────────────────────────────────────────────
+function ChatMessage({ message, onOpenBook, userInitial }: {
+  message: Message;
+  onOpenBook: (b: BookRecommendation) => void;
+  userInitial: string;
+}) {
   const isUser = message.role === "user";
   return (
     <div className={`msg-row ${isUser ? "user-row" : "ai-row"}`}>
       {!isUser && (
         <div className="ai-avatar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
             <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
             <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
           </svg>
@@ -264,27 +308,33 @@ function ChatMessage({ message, onOpenBook }: { message: Message; onOpenBook: (b
         {!isUser && (
           <div className="tts-row">
             <TTSButton text={message.content} />
-            <span className="tts-label">ElevenLabs TTS</span>
+            <span className="tts-label">ElevenLabs</span>
           </div>
         )}
         {!isUser && message.books && message.books.length > 0 && (
           <BookCards books={message.books} onOpen={onOpenBook} />
         )}
       </div>
-      {isUser && <div className="user-avatar">{USERNAME.charAt(0).toUpperCase()}</div>}
+      {isUser && <div className="user-avatar-chat">{userInitial}</div>}
     </div>
   );
 }
 
-// Main Chat Page
-const INITIAL_MESSAGE: Message = {
-  id: "init",
-  role: "assistant",
-  content: `Hi, ${USERNAME}! I'm your AI therapist. I'm here to listen and support you. How are you feeling today?`,
-  timestamp: new Date(),
-};
-
+// ── Main Chat Page ─────────────────────────────────────────────────────────
 export default function ChatPage() {
+  const { data: session, status: authStatus } = useSession();
+  const isLoggedIn = authStatus === "authenticated";
+
+  const displayName = session?.user?.name || session?.user?.email?.split("@")[0] || "Reader";
+  const userInitial = displayName.charAt(0).toUpperCase();
+
+  const INITIAL_MESSAGE: Message = {
+    id: "init",
+    role: "assistant",
+    content: `Hi${isLoggedIn ? `, ${displayName}` : ""}! I'm Atlas, your AI bibliotherapist. I'm here to listen and find the perfect book for how you're feeling. How are you today?`,
+    timestamp: new Date(),
+  };
+
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -303,21 +353,14 @@ export default function ChatPage() {
     }
   }, [input]);
 
-  // Fetch books from Gutendex based on a keyword
   const fetchBooks = async (keyword: string): Promise<BookRecommendation[]> => {
     try {
       const res = await fetch(`/api/books/search?q=${encodeURIComponent(keyword)}`);
       const data = await res.json();
-      return (data.results ?? []).slice(0, 3).map((b: any) => ({
-        id: b.id,
-        title: b.title,
-        authors: b.authors,
-        reason: "",
-      }));
+      return (data.results ?? []).slice(0, 3).map((b: any) => ({ id: b.id, title: b.title, authors: b.authors, reason: "" }));
     } catch { return []; }
   };
 
-  // Detect emotional keywords and map to book search terms
   const getBookKeyword = (text: string): string | null => {
     const t = text.toLowerCase();
     if (t.match(/anxious|anxiety|worry|worried|nervous|stress/)) return "anxiety mindfulness";
@@ -336,28 +379,19 @@ export default function ChatPage() {
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
     setError(null);
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: text.trim(),
-      timestamp: new Date(),
-    };
+    const userMessage: Message = { id: Date.now().toString(), role: "user", content: text.trim(), timestamp: new Date() };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
 
     try {
-      // Run AI response and book fetch in parallel
       const bookKeyword = getBookKeyword(text);
       const [response, books] = await Promise.all([
         fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
-          }),
+          body: JSON.stringify({ messages: updatedMessages.map(m => ({ role: m.role, content: m.content })) }),
         }),
         bookKeyword ? fetchBooks(bookKeyword) : Promise.resolve([]),
       ]);
@@ -367,28 +401,24 @@ export default function ChatPage() {
       try { data = await response.json(); } catch { throw new Error("Invalid response format"); }
       if (!data?.content) throw new Error("Invalid response format");
 
-      // Add reason to books based on keyword
       const reasonMap: Record<string, string> = {
         "anxiety mindfulness": "May help calm anxious thoughts",
-        "hope happiness":      "A gentle read to lift your spirits",
-        "grief loss":          "Companions through difficult loss",
-        "stoicism anger":      "Ancient wisdom on managing anger",
+        "hope happiness": "A gentle read to lift your spirits",
+        "grief loss": "Companions through difficult loss",
+        "stoicism anger": "Ancient wisdom on managing anger",
         "friendship connection": "Stories about human connection",
-        "sleep rest":          "Peaceful reads for a quiet mind",
+        "sleep rest": "Peaceful reads for a quiet mind",
         "self improvement confidence": "Builds inner strength",
-        "love relationships":  "Insight into love and connection",
-        "healing recovery":    "Stories of resilience and healing",
+        "love relationships": "Insight into love and connection",
+        "healing recovery": "Stories of resilience and healing",
         "philosophy meaning life": "Explores life's deeper questions",
       };
       const reason = bookKeyword ? (reasonMap[bookKeyword] ?? "Recommended for you") : "";
       const booksWithReasons = books.map(b => ({ ...b, reason }));
 
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.content,
-        timestamp: new Date(),
-        books: booksWithReasons.length > 0 ? booksWithReasons : undefined,
+        id: (Date.now() + 1).toString(), role: "assistant", content: data.content,
+        timestamp: new Date(), books: booksWithReasons.length > 0 ? booksWithReasons : undefined,
       };
       setMessages(prev => [...prev, aiMessage]);
     } catch {
@@ -423,443 +453,273 @@ export default function ChatPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:ital,wght@0,600;1,400&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400&display=swap');
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-          --blue:        #4a90d9;
-          --blue-dark:   #2563a8;
-          --blue-deeper: #1a4a80;
-          --blue-light:  #dbeafe;
-          --blue-soft:   #eff6ff;
-          --blue-mid:    #bfdbfe;
-          --blue-glow:   rgba(74,144,217,0.25);
-          --coral:       #f87171;
-          --coral-light: #fff5f5;
-          --amber:       #fbbf24;
-          --bg:          #f0f6ff;
-          --white:       #ffffff;
-          --text:        #1e3a5f;
-          --text-mid:    #4a6080;
-          --text-soft:   #8aaac8;
-          --border:      #d0e4f7;
-          --shadow-sm:   0 1px 4px rgba(37,99,168,0.07);
-          --shadow-md:   0 4px 20px rgba(37,99,168,0.1);
+          --ink:        #0d0d0f;
+          --ink-2:      #16161a;
+          --ink-3:      #1f1f24;
+          --ink-4:      #2a2a32;
+          --blue:       #4a90d9;
+          --blue-glow:  rgba(74,144,217,0.18);
+          --gold:       #c9a84c;
+          --gold-light: #e8c97a;
+          --text:       #e8e6e1;
+          --text-mid:   #9b9890;
+          --text-dim:   #5a5854;
+          --border:     rgba(255,255,255,0.06);
+          --border-mid: rgba(255,255,255,0.10);
+          --serif:      'Cormorant Garamond', Georgia, serif;
+          --sans:       'DM Sans', sans-serif;
+          --mono:       'DM Mono', monospace;
         }
 
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; }
+        body { font-family: var(--sans); background: var(--ink); color: var(--text); min-height: 100vh; overflow: hidden; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--ink-2); }
+        ::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 2px; }
 
-        body {
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          background: var(--bg); color: var(--text); min-height: 100vh;
-          background-image:
-            radial-gradient(ellipse 55% 40% at 90% 5%,  rgba(74,144,217,0.12) 0%, transparent 60%),
-            radial-gradient(ellipse 45% 45% at 5%  95%, rgba(74,144,217,0.08) 0%, transparent 60%);
-        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
+        @keyframes waveBar { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes ttsGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(74,144,217,0.3); } 50% { box-shadow: 0 0 0 6px rgba(74,144,217,0); } }
+        @keyframes dropdownIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(24px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.35); } 50% { box-shadow: 0 0 0 6px rgba(201,168,76,0); } }
 
+        .spin { animation: spin 0.7s linear infinite; }
+
+        /* ── Layout ── */
         .page-wrap { display: grid; grid-template-rows: 64px 1fr; height: 100vh; }
 
-        .topnav {
-          background: var(--white); border-bottom: 1px solid var(--border);
-          display: flex; align-items: center; padding: 0 32px; gap: 16px;
-          box-shadow: var(--shadow-sm); z-index: 20;
+        /* ── Nav ── */
+        .nav {
+          position: sticky; top: 0; z-index: 50;
+          height: 64px; padding: 0 40px;
+          display: flex; align-items: center; gap: 12px;
+          background: rgba(13,13,15,0.9);
+          border-bottom: 1px solid var(--border);
+          backdrop-filter: blur(14px);
         }
 
-        .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex-shrink: 0; }
+        .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex-shrink: 0; }
+        .nav-logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px var(--blue-glow); }
+        .nav-name { font-family: var(--serif); font-size: 1.45rem; font-weight: 600; color: var(--text); letter-spacing: 0.01em; }
+        .nav-name em { color: var(--blue); font-style: normal; }
 
-        .brand-icon {
-          width: 36px; height: 36px; border-radius: 12px;
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 12px var(--blue-glow);
-        }
+        .nav-divider { width: 1px; height: 22px; background: var(--border); }
 
-        .brand-name {
-          font-family: 'Fraunces', Georgia, serif; font-size: 1.3rem;
-          font-weight: 600; color: var(--text); letter-spacing: -0.02em;
-        }
-        .brand-name span { color: var(--blue); }
-
-        .nav-divider { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
-
-        .nav-badge {
+        .nav-session {
           display: flex; align-items: center; gap: 6px;
-          background: var(--blue-soft); color: var(--blue-dark);
-          font-size: 0.72rem; font-weight: 600; padding: 5px 12px;
-          border-radius: 20px; border: 1px solid var(--blue-mid);
+          font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
+          color: var(--blue); padding: 4px 10px; border: 1px solid rgba(74,144,217,0.25);
+          border-radius: 4px; background: rgba(74,144,217,0.06);
         }
+        .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: pulse 2s infinite; }
 
-        .live-dot {
-          width: 7px; height: 7px; border-radius: 50%;
-          background: var(--blue); animation: livePulse 2s infinite;
-        }
-
-        @keyframes livePulse {
-          0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(74,144,217,0.4); }
-          50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(74,144,217,0); }
-        }
+        .nav-link { font-size: 0.8rem; font-weight: 500; color: var(--text-mid); text-decoration: none; padding: 6px 13px; border-radius: 20px; border: 1px solid transparent; transition: all 0.15s; }
+        .nav-link:hover { color: var(--text); border-color: var(--border-mid); background: rgba(255,255,255,0.04); }
 
         .nav-spacer { flex: 1; }
 
-        .nav-books-link {
-          font-size: 0.82rem; font-weight: 600; color: var(--blue-dark);
-          text-decoration: none; padding: 6px 14px; border-radius: 20px;
-          background: var(--blue-soft); border: 1.5px solid var(--blue-mid);
-          transition: all 0.15s; white-space: nowrap;
-        }
-        .nav-books-link:hover { background: var(--blue-light); border-color: var(--blue); }
+        /* ── User menu ── */
+        .user-menu-wrap { position: relative; }
+        .user-menu-btn { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-mid); border-radius: 20px; padding: 5px 12px 5px 5px; cursor: pointer; transition: all 0.15s; color: var(--text); }
+        .user-menu-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
+        .user-avatar-nav { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 700; color: white; flex-shrink: 0; }
+        .user-name-nav { font-size: 0.78rem; font-weight: 500; color: var(--text); }
+        .user-dropdown { position: absolute; top: calc(100% + 8px); right: 0; min-width: 175px; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 10px; padding: 6px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); animation: dropdownIn 0.18s cubic-bezier(0.22,1,0.36,1) both; z-index: 200; }
+        .user-dropdown-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px; border-radius: 6px; font-size: 0.78rem; font-weight: 500; color: var(--text-mid); text-decoration: none; background: none; border: none; cursor: pointer; transition: all 0.12s; text-align: left; font-family: var(--sans); }
+        .user-dropdown-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+        .user-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
+        .user-dropdown-signout { color: #f87171 !important; }
+        .user-dropdown-signout:hover { background: rgba(248,113,113,0.08) !important; color: #fca5a5 !important; }
 
-        .nav-user {
-          display: flex; align-items: center; gap: 10px; padding: 6px 12px;
-          border-radius: 12px; cursor: pointer; transition: background 0.15s;
-        }
-        .nav-user:hover { background: var(--bg); }
+        /* Guest nav */
+        .nav-register { font-size: 0.78rem; font-weight: 500; color: var(--text-mid); text-decoration: none; padding: 6px 13px; border-radius: 20px; border: 1px solid var(--border-mid); transition: all 0.15s; }
+        .nav-register:hover { color: var(--text); }
+        .nav-login { font-size: 0.78rem; font-weight: 500; color: white; text-decoration: none; padding: 7px 16px; border-radius: 20px; background: linear-gradient(135deg, var(--blue), #6baee8); box-shadow: 0 4px 14px var(--blue-glow); transition: all 0.15s; }
+        .nav-login:hover { transform: translateY(-1px); }
 
-        .nav-user-avatar {
-          width: 32px; height: 32px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          display: flex; align-items: center; justify-content: center;
-          font-size: 0.78rem; font-weight: 700; color: white;
-          box-shadow: 0 2px 8px var(--blue-glow);
-        }
-
-        .nav-user-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
-
-        .main {
+        /* ── Chat layout ── */
+        .chat-wrap {
           display: flex; flex-direction: column; overflow: hidden;
-          max-width: 860px; width: 100%; margin: 0 auto; padding: 0 24px;
+          max-width: 820px; width: 100%; margin: 0 auto; padding: 0 28px;
+          height: 100%;
         }
 
         .chat-subheader {
-          padding: 18px 0 14px; display: flex; align-items: center;
-          gap: 14px; flex-shrink: 0; border-bottom: 1px solid var(--border);
+          padding: 16px 0 14px; display: flex; align-items: center; gap: 14px;
+          flex-shrink: 0; border-bottom: 1px solid var(--border);
         }
-
-        .ai-avatar-lg {
-          width: 46px; height: 46px; border-radius: 14px;
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0;
-        }
-
-        .chat-subheader-text h2 { font-size: 0.98rem; font-weight: 700; color: var(--text); }
-        .chat-subheader-text p  { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
-
+        .atlas-icon { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0; }
+        .subheader-text h2 { font-family: var(--serif); font-size: 1.2rem; font-weight: 400; color: var(--text); }
+        .subheader-text p { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; font-family: var(--mono); letter-spacing: 0.04em; }
         .subheader-chips { margin-left: auto; display: flex; gap: 8px; }
+        .chip { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; border-radius: 3px; border: 1px solid; white-space: nowrap; }
+        .chip-blue { color: var(--blue); border-color: rgba(74,144,217,0.3); background: rgba(74,144,217,0.06); }
+        .chip-gold { color: var(--gold); border-color: rgba(201,168,76,0.3); background: rgba(201,168,76,0.06); }
 
-        .chip {
-          font-size: 0.71rem; font-weight: 600; padding: 5px 11px;
-          border-radius: 20px; border: 1.5px solid; white-space: nowrap;
-        }
-        .chip-blue  { color: var(--blue-dark); background: var(--blue-soft); border-color: var(--blue-mid); }
-        .chip-coral { color: #b91c1c; background: var(--coral-light); border-color: #fca5a5; }
+        /* ── Messages ── */
+        .messages-area { flex: 1; overflow-y: auto; padding: 22px 0 10px; display: flex; flex-direction: column; scroll-behavior: smooth; }
 
-        .messages-area {
-          flex: 1; overflow-y: auto; padding: 24px 0 12px;
-          display: flex; flex-direction: column; scroll-behavior: smooth;
-        }
-        .messages-area::-webkit-scrollbar { width: 5px; }
-        .messages-area::-webkit-scrollbar-track { background: transparent; }
-        .messages-area::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
-
-        .msg-row {
-          display: flex; align-items: flex-end; gap: 10px; margin-bottom: 16px;
-          animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1);
-        }
-
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(10px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-
+        .msg-row { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 16px; animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1); }
         .user-row { flex-direction: row-reverse; }
 
-        .ai-avatar {
-          width: 34px; height: 34px; border-radius: 12px;
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 3px 10px var(--blue-glow); flex-shrink: 0;
-        }
+        .ai-avatar { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px var(--blue-glow); flex-shrink: 0; }
+        .user-avatar-chat { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--ink-4), var(--ink-3)); border: 1px solid var(--border-mid); display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 600; color: var(--text-mid); flex-shrink: 0; }
 
-        .user-avatar {
-          width: 34px; height: 34px; border-radius: 50%;
-          background: linear-gradient(135deg, #60a5fa, var(--blue));
-          display: flex; align-items: center; justify-content: center;
-          font-size: 0.8rem; font-weight: 700; color: white;
-          flex-shrink: 0; box-shadow: 0 3px 10px var(--blue-glow);
-        }
+        .bubble-col { display: flex; flex-direction: column; gap: 6px; max-width: 66%; }
 
-        .bubble { padding: 12px 16px; border-radius: 20px; font-size: 0.9rem; line-height: 1.65; }
+        .bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.88rem; line-height: 1.68; }
         .bubble p { color: inherit; }
-        .bubble time { display: block; font-size: 0.65rem; margin-top: 6px; opacity: 0.45; }
+        .bubble time { display: block; font-size: 0.62rem; margin-top: 6px; opacity: 0.4; font-family: var(--mono); }
 
-        .ai-bubble {
-          background: var(--white); border: 1px solid var(--border);
-          border-bottom-left-radius: 6px; color: var(--text); box-shadow: var(--shadow-sm);
-        }
-        .user-bubble {
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          border-bottom-right-radius: 6px; color: white;
-          box-shadow: 0 4px 16px var(--blue-glow);
-        }
-        .user-bubble time { color: rgba(255,255,255,0.65); }
+        .ai-bubble { background: var(--ink-2); border: 1px solid var(--border); border-bottom-left-radius: 5px; color: var(--text); }
+        .user-bubble { background: linear-gradient(135deg, var(--blue), #5fa3e8); border-bottom-right-radius: 5px; color: white; box-shadow: 0 4px 16px var(--blue-glow); }
+        .user-bubble time { color: rgba(255,255,255,0.55); }
 
-        .bubble-col { display: flex; flex-direction: column; gap: 6px; max-width: 68%; }
-
-        .tts-row { display: flex; align-items: center; gap: 8px; padding-left: 4px; }
-
-        .tts-btn {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 0.76rem; font-weight: 600;
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          padding: 6px 14px 6px 11px; border-radius: 20px;
-          border: 1.5px solid var(--blue-mid); background: var(--white);
-          color: var(--blue-dark); cursor: pointer; transition: all 0.15s ease;
-          white-space: nowrap; box-shadow: 0 1px 4px rgba(37,99,168,0.10);
-        }
-        .tts-btn:hover {
-          background: var(--blue-soft); border-color: var(--blue);
-          transform: translateY(-1px); box-shadow: 0 3px 10px rgba(74,144,217,0.2);
-        }
-        .tts-btn.tts-playing {
-          background: #f0fdf4; border-color: #86efac; color: #166534;
-          animation: ttsGlow 2s ease-in-out infinite;
-        }
-        .tts-btn.tts-loading { opacity: 0.7; cursor: wait; }
-
-        @keyframes ttsGlow {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(134,239,172,0.4); }
-          50%       { box-shadow: 0 0 0 6px rgba(134,239,172,0); }
-        }
-        @keyframes waveBar { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .spin { animation: spin 0.7s linear infinite; }
-
-        .tts-label { font-size: 0.64rem; color: var(--text-soft); letter-spacing: 0.02em; }
-
-        /* ── Book recommendation cards ── */
-        .book-recs { margin-top: 10px; }
-        .book-recs-label {
-          font-size: 0.72rem; font-weight: 600; color: var(--text-soft);
-          margin-bottom: 8px; padding-left: 2px;
-        }
-        .book-recs-grid { display: flex; flex-direction: column; gap: 8px; }
-
-        .book-rec-card {
-          background: var(--blue-soft); border: 1.5px solid var(--blue-mid);
-          border-radius: 14px; padding: 12px 14px; cursor: pointer;
-          text-align: left; transition: all 0.15s; width: 100%;
-          box-shadow: 0 1px 4px rgba(37,99,168,0.07);
-        }
-        .book-rec-card:hover {
-          background: var(--blue-light); border-color: var(--blue);
-          transform: translateY(-1px); box-shadow: 0 4px 12px rgba(74,144,217,0.15);
-        }
-
-        .book-rec-title {
-          font-size: 0.84rem; font-weight: 700; color: var(--text);
-          margin-bottom: 2px; line-height: 1.3;
-        }
-        .book-rec-author { font-size: 0.72rem; color: var(--text-soft); margin-bottom: 6px; }
-        .book-rec-reason { font-size: 0.74rem; color: var(--text-mid); margin-bottom: 8px; font-style: italic; }
-        .book-rec-cta {
-          font-size: 0.72rem; font-weight: 600; color: var(--blue-dark);
-          background: var(--white); padding: 4px 10px; border-radius: 20px;
-          border: 1px solid var(--blue-mid); display: inline-block;
-        }
+        /* ── TTS ── */
+        .tts-row { display: flex; align-items: center; gap: 8px; padding-left: 2px; }
+        .tts-btn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 0.72rem; font-weight: 500; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border-mid); background: var(--ink-3); color: var(--text-mid); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .tts-btn:hover { border-color: rgba(74,144,217,0.4); color: var(--text); background: rgba(74,144,217,0.1); }
+        .tts-btn.tts-playing { border-color: rgba(74,217,144,0.4); color: #4adda0; background: rgba(74,217,144,0.08); animation: ttsGlow 2s ease-in-out infinite; }
+        .tts-btn.tts-loading { opacity: 0.6; cursor: wait; }
+        .tts-label { font-family: var(--mono); font-size: 0.58rem; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; }
 
         /* ── Typing dots ── */
-        .typing-bubble { display: flex; align-items: center; gap: 5px; padding: 16px 18px; }
-        .dot {
-          width: 7px; height: 7px; border-radius: 50%; background: var(--blue);
-          display: inline-block; animation: bounce 1.3s infinite ease-in-out;
-        }
+        .typing-dots { display: flex; align-items: center; gap: 5px; padding: 14px 16px; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); display: inline-block; animation: bounce 1.3s infinite ease-in-out; }
         .dot:nth-child(2) { animation-delay: 0.15s; }
         .dot:nth-child(3) { animation-delay: 0.3s; }
 
-        @keyframes bounce {
-          0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
-          30% { transform: translateY(-7px); opacity: 1; }
-        }
+        /* ── Book cards ── */
+        .book-recs { margin-top: 8px; }
+        .book-recs-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+        .book-recs-grid { display: flex; flex-direction: column; gap: 6px; }
+        .book-rec-card { background: var(--ink-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: left; transition: all 0.15s; width: 100%; }
+        .book-rec-card:hover { border-color: rgba(201,168,76,0.3); background: rgba(201,168,76,0.04); transform: translateX(3px); }
+        .book-rec-title { font-family: var(--serif); font-size: 0.92rem; font-weight: 400; color: var(--text); margin-bottom: 2px; line-height: 1.3; }
+        .book-rec-author { font-size: 0.68rem; color: var(--text-dim); margin-bottom: 5px; font-family: var(--mono); }
+        .book-rec-reason { font-size: 0.72rem; color: var(--text-mid); margin-bottom: 7px; font-style: italic; }
+        .book-rec-cta { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); padding: 3px 8px; border: 1px solid rgba(201,168,76,0.3); border-radius: 3px; background: rgba(201,168,76,0.06); }
 
         /* ── Input ── */
-        .input-area { padding: 14px 0 22px; flex-shrink: 0; }
-
-        .error-msg {
-          font-size: 0.78rem; color: #b91c1c; background: var(--coral-light);
-          border: 1px solid #fca5a5; border-radius: 10px; padding: 8px 14px;
-          margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
-        }
-
-        .input-wrapper {
-          display: flex; align-items: flex-end; gap: 10px;
-          background: var(--white); border: 2px solid var(--border);
-          border-radius: 20px; padding: 10px 10px 10px 20px;
-          transition: border-color 0.2s, box-shadow 0.2s; box-shadow: var(--shadow-sm);
-        }
-        .input-wrapper:focus-within {
-          border-color: var(--blue); box-shadow: 0 0 0 4px rgba(74,144,217,0.12);
-        }
-
-        textarea {
-          flex: 1; border: none; outline: none; background: transparent;
-          resize: none; font-family: 'Plus Jakarta Sans', sans-serif;
-          font-size: 0.9rem; color: var(--text); line-height: 1.5;
-          min-height: 38px; max-height: 140px; padding: 6px 0; caret-color: var(--blue);
-        }
-        textarea::placeholder { color: var(--text-soft); }
-
+        .input-area { padding: 12px 0 20px; flex-shrink: 0; }
+        .error-msg { font-size: 0.78rem; color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .input-wrapper { display: flex; align-items: flex-end; gap: 8px; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 18px; padding: 10px 10px 10px 18px; transition: border-color 0.2s, box-shadow 0.2s; }
+        .input-wrapper:focus-within { border-color: rgba(74,144,217,0.4); box-shadow: 0 0 0 3px rgba(74,144,217,0.08); }
+        textarea { flex: 1; border: none; outline: none; background: transparent; resize: none; font-family: var(--sans); font-size: 0.88rem; color: var(--text); line-height: 1.5; min-height: 36px; max-height: 140px; padding: 5px 0; caret-color: var(--blue); }
+        textarea::placeholder { color: var(--text-dim); }
         .input-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .icon-btn { width: 36px; height: 36px; border-radius: 10px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.18s; }
+        .voice-btn { background: var(--ink-3); color: var(--text-mid); border: 1px solid var(--border-mid); }
+        .voice-btn:hover { background: var(--ink-4); color: var(--text); }
+        .voice-btn.active { background: rgba(201,168,76,0.1); color: var(--gold); border-color: rgba(201,168,76,0.3); animation: voicePulse 1.2s infinite; }
+        .send-btn { background: linear-gradient(135deg, var(--blue), #6baee8); color: white; box-shadow: 0 4px 14px var(--blue-glow); }
+        .send-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(74,144,217,0.35); }
+        .send-btn:disabled { background: var(--ink-4); color: var(--text-dim); box-shadow: none; cursor: not-allowed; transform: none; }
+        .input-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 0 2px; }
+        .input-hint { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.06em; }
+        .powered-by { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
+        .powered-by em { color: var(--gold); font-style: normal; }
 
-        .icon-btn {
-          width: 38px; height: 38px; border-radius: 12px; border: none;
-          cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: all 0.18s;
-        }
+        /* ── Reader/Modal ── */
+        .modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(8,8,10,0.82); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: backdropIn 0.2s ease both; }
+        .modal { position: relative; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 16px; max-width: 720px; width: 100%; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,0.7); animation: modalIn 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+        .modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; }
+        .modal-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .modal-book-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .modal-book-title { font-family: var(--serif); font-size: 1rem; font-weight: 400; color: var(--text); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+        .modal-book-author { font-family: var(--mono); font-size: 0.66rem; color: var(--gold); margin-top: 2px; }
+        .modal-book-reason { font-size: 0.7rem; color: var(--text-mid); margin-top: 3px; font-style: italic; }
+        .modal-close { width: 30px; height: 30px; border-radius: 50%; background: var(--ink-3); border: 1px solid var(--border-mid); color: var(--text-mid); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
+        .modal-close:hover { background: var(--ink-4); color: var(--text); }
+        .modal-controls { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap; }
+        .modal-nav { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        .nav-chip { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; padding: 5px 10px; border-radius: 3px; border: 1px solid var(--border-mid); background: var(--ink-3); color: var(--text-mid); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .nav-chip:hover:not(:disabled) { border-color: rgba(74,144,217,0.4); color: var(--text); }
+        .nav-chip:disabled { opacity: 0.35; cursor: not-allowed; }
+        .modal-body { flex: 1; overflow-y: auto; padding: 24px; }
+        .modal-status { padding: 48px 0; text-align: center; font-size: 0.88rem; }
+        .reader-text { white-space: pre-wrap; word-break: break-word; font-family: var(--serif); font-size: 1rem; line-height: 1.9; color: var(--text-mid); }
 
-        .voice-btn { background: var(--blue-soft); color: var(--blue-dark); border: 1.5px solid var(--blue-mid); }
-        .voice-btn:hover { background: var(--blue-light); }
-        .voice-btn.active {
-          background: var(--coral-light); color: var(--coral); border-color: #fca5a5;
-          animation: voicePulse 1.2s infinite;
-        }
-
-        @keyframes voicePulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0.35); }
-          50%       { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
-        }
-
-        .send-btn {
-          background: linear-gradient(135deg, var(--blue), #6baee8);
-          color: white; box-shadow: 0 4px 14px var(--blue-glow);
-        }
-        .send-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(74,144,217,0.4); }
-        .send-btn:disabled {
-          background: var(--blue-light); color: var(--text-soft);
-          box-shadow: none; cursor: not-allowed; transform: none;
-        }
-
-        .input-footer {
-          display: flex; align-items: center; justify-content: space-between;
-          margin-top: 10px; padding: 0 4px;
-        }
-        .input-hint { font-size: 0.69rem; color: var(--text-soft); }
-        .powered-by { font-size: 0.69rem; color: var(--text-soft); display: flex; align-items: center; gap: 4px; }
-        .powered-by span { color: var(--blue-dark); font-weight: 600; }
-
-        /* ── Reader modal ── */
-        .reader-overlay {
-          position: fixed; inset: 0; background: rgba(30,58,95,0.5);
-          backdrop-filter: blur(6px); z-index: 100;
-          display: flex; align-items: center; justify-content: center;
-          padding: 24px; animation: fadeUp 0.2s ease;
-        }
-        .reader-panel {
-          background: var(--white); border-radius: 20px;
-          width: 100%; max-width: 740px; max-height: 88vh;
-          display: flex; flex-direction: column;
-          box-shadow: var(--shadow-md); overflow: hidden; border: 1px solid var(--border);
-        }
-        .reader-header {
-          padding: 18px 20px; border-bottom: 1px solid var(--border);
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 14px; flex-shrink: 0;
-        }
-        .reader-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-        .reader-title {
-          font-size: 0.95rem; font-weight: 700; color: var(--text); line-height: 1.3;
-          display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
-        }
-        .reader-author { font-size: 0.74rem; color: var(--text-soft); margin-top: 2px; }
-        .reader-reason { font-size: 0.72rem; color: var(--blue-dark); margin-top: 3px; font-style: italic; }
-        .reader-close-btn {
-          width: 34px; height: 34px; border-radius: 10px;
-          border: 1.5px solid var(--border); background: var(--bg);
-          color: var(--text-mid); cursor: pointer; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center; transition: all 0.15s;
-        }
-        .reader-close-btn:hover { background: var(--blue-light); border-color: var(--blue); color: var(--blue-dark); }
-        .reader-controls {
-          padding: 12px 20px; border-bottom: 1px solid var(--border);
-          display: flex; align-items: center; gap: 12px; flex-shrink: 0; flex-wrap: wrap;
-        }
-        .reader-nav { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-        .reader-nav-btn { cursor: pointer !important; transition: all 0.15s; }
-        .reader-nav-btn:hover:not(:disabled) { background: var(--blue-light) !important; border-color: var(--blue) !important; }
-        .reader-nav-btn:disabled { opacity: 0.35; cursor: not-allowed !important; }
-        .reader-section-label { font-size: 0.72rem; color: var(--text-soft); white-space: nowrap; }
-        .reader-body { flex: 1; overflow-y: auto; padding: 28px; }
-        .reader-body::-webkit-scrollbar { width: 5px; }
-        .reader-body::-webkit-scrollbar-track { background: transparent; }
-        .reader-body::-webkit-scrollbar-thumb { background: var(--blue-mid); border-radius: 3px; }
-        .reader-text {
-          white-space: pre-wrap; word-break: break-word;
-          font-family: 'Georgia', serif; font-size: 0.97rem; line-height: 1.9; color: var(--text);
-        }
-        .reader-status { padding: 48px 0; text-align: center; color: var(--text-soft); font-size: 0.88rem; }
-        .reader-error { color: #b91c1c; }
-
-        @media (max-width: 768px) {
-          .topnav { padding: 0 16px; }
-          .main { padding: 0 16px; }
+        @media (max-width: 860px) {
+          .nav { padding: 0 20px; }
+          .chat-wrap { padding: 0 16px; }
           .subheader-chips { display: none; }
-          .bubble { max-width: 78%; }
-          .bubble-col { max-width: 80%; }
+          .bubble-col { max-width: 78%; }
         }
-        @media (max-width: 480px) {
-          .brand-name { display: none; }
-          .nav-badge { display: none; }
-          .nav-books-link span { display: none; }
-          .bubble { max-width: 88%; font-size: 0.875rem; }
+        @media (max-width: 540px) {
+          .nav-session { display: none; }
+          .nav-link { display: none; }
+          .bubble-col { max-width: 86%; }
         }
       `}</style>
 
       <div className="page-wrap">
-        <nav className="topnav">
-          <Link href = "/" className="brand">
-            <div className="brand-icon">
+        {/* ── NAV ── */}
+        <nav className="nav">
+          <Link href="/" className="nav-brand">
+            <div className="nav-logo">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
+                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
+              </svg>
+            </div>
+            <span className="nav-name">At<em>las</em></span>
+          </Link>
+
+          <div className="nav-divider" />
+
+          <div className="nav-session">
+            <span className="live-dot" />
+            Session Active
+          </div>
+
+          <Link href="/books" className="nav-link">Library</Link>
+
+          <div className="nav-spacer" />
+
+          {isLoggedIn ? (
+            <UserMenu name={displayName} />
+          ) : (
+            <>
+              <Link href="/register" className="nav-register">Register</Link>
+              <Link href="/login" className="nav-login">Sign in →</Link>
+            </>
+          )}
+        </nav>
+
+        {/* ── CHAT ── */}
+        <main className="chat-wrap">
+          <div className="chat-subheader">
+            <div className="atlas-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                 <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
                 <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
               </svg>
             </div>
-            <span className="brand-name">At<span>las</span></span>
-          </Link>
-          <div className="nav-divider" />
-          <div className="nav-badge">
-            <span className="live-dot" />
-            Session Active
-          </div>
-          <a href="/books" className="nav-books-link">📚 <span>Books</span></a>
-          <div className="nav-spacer" />
-          <div className="nav-user">
-            <div className="nav-user-avatar">{USERNAME.charAt(0)}</div>
-            <span className="nav-user-name">{USERNAME}</span>
-          </div>
-        </nav>
-
-        <main className="main">
-          <div className="chat-subheader">
-            <div className="ai-avatar-lg">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/>
-                <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>
-              </svg>
-            </div>
-            <div className="chat-subheader-text">
-              <h2>Atlas · AI Therapist</h2>
-              <p>Always here to listen and support you</p>
+            <div className="subheader-text">
+              <h2>Atlas · AI Bibliotherapist</h2>
+              <p>Powered by Gemini · ElevenLabs · Project Gutenberg</p>
             </div>
             <div className="subheader-chips">
               <span className="chip chip-blue">Private Session</span>
-              <span className="chip chip-coral">Call 03-76272929 (Befrienders KL)</span>
+              <span className="chip chip-gold">Befrienders KL · 03-76272929</span>
             </div>
           </div>
 
           <div className="messages-area">
             {messages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} onOpenBook={setOpenBook} />
+              <ChatMessage key={msg.id} message={msg} onOpenBook={setOpenBook} userInitial={userInitial} />
             ))}
             {isLoading && <TypingIndicator />}
             <div ref={messagesEndRef} />
@@ -868,11 +728,7 @@ export default function ChatPage() {
           <div className="input-area">
             {error && (
               <p className="error-msg">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 {error}
               </p>
             )}
@@ -894,35 +750,19 @@ export default function ChatPage() {
                   type="button"
                 >
                   {isListening ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="6" width="12" height="12" rx="2"/>
-                    </svg>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                   ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                      <line x1="12" y1="19" x2="12" y2="23"/>
-                      <line x1="8" y1="23" x2="16" y2="23"/>
-                    </svg>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                   )}
                 </button>
-                <button
-                  className="icon-btn send-btn"
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || isLoading}
-                  type="button"
-                  title="Send"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <line x1="22" y1="2" x2="11" y2="13"/>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                  </svg>
+                <button className="icon-btn send-btn" onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} type="button" title="Send">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </div>
             </div>
             <div className="input-footer">
               <span className="input-hint">Enter to send · Shift+Enter for new line</span>
-              <span className="powered-by">Powered by <span>Gemini</span> &amp; <span>ElevenLabs</span></span>
+              <span className="powered-by">Powered by <em>Gemini</em> &amp; <em>ElevenLabs</em></span>
             </div>
           </div>
         </main>

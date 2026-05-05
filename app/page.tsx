@@ -49,7 +49,6 @@ const GENRES = [
   { label: "🧘 Mindfulness",   genre: "subject:self-help mindfulness meditation" },
   { label: "💪 Productivity",  genre: "subject:self-help productivity habits" },
   { label: "🧠 Psychology",    genre: "subject:psychology self-help" },
-  { label: "💭 Philosophy",    genre: "subject:philosophy stoicism" },
   { label: "❤️ Relationships", genre: "subject:self-help relationships" },
   { label: "💰 Finance",       genre: "subject:self-help personal finance" },
   { label: "🌿 Healing",       genre: "subject:self-help anxiety depression healing" },
@@ -86,7 +85,7 @@ function starStr(rating: number): string {
   return "★".repeat(full) + "☆".repeat(5 - full);
 }
 
-// ── User Menu (shown when logged in) ─────────────────────────────────────────
+// User Menu (shown when logged in) 
 function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -145,7 +144,7 @@ function UserMenu({ name }: { name: string }) {
   );
 }
 
-// ── Book Detail Modal ─────────────────────────────────────────────────────────
+// Book Detail Modal 
 function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -209,7 +208,7 @@ function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   );
 }
 
-// ── Skeleton & Cards ──────────────────────────────────────────────────────────
+// Skeleton & Cards 
 function SkeletonCard() {
   return (
     <div style={{ flexShrink: 0, width: 160 }}>
@@ -288,7 +287,7 @@ function Carousel({ books, loading, id, onSelect }: { books: BookItem[]; loading
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// Main Page 
 export default function LandingPage() {
   const { data: session, status } = useSession();
   const isLoggedIn = status === "authenticated";
