@@ -1,19 +1,5 @@
-import { withAuth } from "next-auth/middleware";
-
-export default withAuth({
-  pages: {
-    signIn: "/login",
-  },
-  callbacks: {
-    authorized: ({ token }) => !!token,
-  },
-});
+export { default } from "next-auth/middleware";
 
 export const config = {
-  matcher: [
-    "/chat/:path*",
-    "/books/:path*",
-    "/api/chat/:path*",
-    "/api/books/:path*",
-  ],
+  matcher: ["/chat/:path*", "/books/:path*"],
 };
