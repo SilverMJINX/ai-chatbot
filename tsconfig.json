@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "baseUrl": ".", // ✅ ADD THIS LINE
+    "baseUrl": ".", 
     "target": "ES2017",
     "lib": [
       "dom",
