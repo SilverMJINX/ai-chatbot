@@ -11,14 +11,17 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "bcryptjs": "^3.0.3",
     "mongodb": "^7.2.0",
     "next": "16.2.4",
+    "next-auth": "^4.24.14",
     "pdf-parse": "^2.4.5",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.19.39",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
