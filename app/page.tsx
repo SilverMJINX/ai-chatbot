@@ -621,14 +621,14 @@ export default function LandingPage() {
 
         <div className="nav-links">
           {isLoggedIn ? (
-            // ── Logged in: show app links + user menu ──
+            // Logged in: show app links + user menu
             <>
               <Link href="/chat" className="nav-link">Chat with Atlas</Link>
               <Link href="/books" className="nav-link">My Library</Link>
               <UserMenu name={session?.user?.name || session?.user?.email || "User"} />
             </>
           ) : (
-            // ── Logged out: show login + register ──
+            // Logged out: show login + register
             <>
               <Link href="/chat" className="nav-link">Explore</Link>
               <Link href="/register" className="nav-register">Create account</Link>
