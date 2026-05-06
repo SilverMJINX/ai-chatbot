@@ -353,75 +353,59 @@ export default function ChatPage() {
     }
   }, [input]);
 
-  const fetchBooks = async (keyword: string): Promise<BookRecommendation[]> => {
-    try {
-      const res = await fetch(`/api/books/search?q=${encodeURIComponent(keyword)}`);
-      const data = await res.json();
-      return (data.results ?? []).slice(0, 3).map((b: any) => ({ id: b.id, title: b.title, authors: b.authors, reason: "" }));
-    } catch { return []; }
-  };
-
-  const getBookKeyword = (text: string): string | null => {
-    const t = text.toLowerCase();
-    if (t.match(/anxious|anxiety|worry|worried|nervous|stress/)) return "anxiety mindfulness";
-    if (t.match(/depress|sad|hopeless|empty|numb|down/)) return "hope happiness";
-    if (t.match(/grief|loss|bereav|mourn|miss someone/)) return "grief loss";
-    if (t.match(/anger|angry|furious|rage|frustrat/)) return "stoicism anger";
-    if (t.match(/lonely|alone|isolat|no friends/)) return "friendship connection";
-    if (t.match(/sleep|insomnia|tired|exhaust/)) return "sleep rest";
-    if (t.match(/self.esteem|confidence|worthless|ugly/)) return "self improvement confidence";
-    if (t.match(/relationship|breakup|divorce|heartbreak/)) return "love relationships";
-    if (t.match(/trauma|abuse|ptsd|hurt/)) return "healing recovery";
-    if (t.match(/purpose|meaning|lost|direction/)) return "philosophy meaning life";
-    return null;
-  };
-
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
     setError(null);
-    const userMessage: Message = { id: Date.now().toString(), role: "user", content: text.trim(), timestamp: new Date() };
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: text.trim(),
+      timestamp: new Date(),
+    };
+
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
 
     try {
-      const bookKeyword = getBookKeyword(text);
-      const [response, books] = await Promise.all([
-        fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: updatedMessages.map(m => ({ role: m.role, content: m.content })) }),
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Filter out the init message — Gemini doesn't want a leading assistant turn
+        body: JSON.stringify({
+          messages: updatedMessages
+            .filter(m => m.id !== "init")
+            .map(m => ({ role: m.role, content: m.content })),
         }),
-        bookKeyword ? fetchBooks(bookKeyword) : Promise.resolve([]),
-      ]);
+      });
 
       if (!response.ok) throw new Error("Failed to get response");
-      let data;
+
+      let data: any;
       try { data = await response.json(); } catch { throw new Error("Invalid response format"); }
       if (!data?.content) throw new Error("Invalid response format");
 
-      const reasonMap: Record<string, string> = {
-        "anxiety mindfulness": "May help calm anxious thoughts",
-        "hope happiness": "A gentle read to lift your spirits",
-        "grief loss": "Companions through difficult loss",
-        "stoicism anger": "Ancient wisdom on managing anger",
-        "friendship connection": "Stories about human connection",
-        "sleep rest": "Peaceful reads for a quiet mind",
-        "self improvement confidence": "Builds inner strength",
-        "love relationships": "Insight into love and connection",
-        "healing recovery": "Stories of resilience and healing",
-        "philosophy meaning life": "Explores life's deeper questions",
-      };
-      const reason = bookKeyword ? (reasonMap[bookKeyword] ?? "Recommended for you") : "";
-      const booksWithReasons = books.map(b => ({ ...b, reason }));
-
+      // API now returns an optional `book` object when a fetch_book tool was used
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(), role: "assistant", content: data.content,
-        timestamp: new Date(), books: booksWithReasons.length > 0 ? booksWithReasons : undefined,
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.content,
+        timestamp: new Date(),
+        books: data.book
+          ? [{
+              id: data.book.id,
+              title: data.book.title,
+              authors: [{ name: data.book.author }],
+              reason: data.book.reason ?? "Recommended for you",
+            }]
+          : undefined,
       };
+
       setMessages(prev => [...prev, aiMessage]);
-    } catch {
+    } catch (e) {
+      console.error("Chat error:", e);
       setError("Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
@@ -476,7 +460,6 @@ export default function ChatPage() {
           --mono:       'DM Mono', monospace;
         }
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; }
         body { font-family: var(--sans); background: var(--ink); color: var(--text); min-height: 100vh; overflow: hidden; }
         ::-webkit-scrollbar { width: 4px; }
@@ -496,10 +479,8 @@ export default function ChatPage() {
 
         .spin { animation: spin 0.7s linear infinite; }
 
-        /* ── Layout ── */
         .page-wrap { display: grid; grid-template-rows: 64px 1fr; height: 100vh; }
 
-        /* ── Nav ── */
         .nav {
           position: sticky; top: 0; z-index: 50;
           height: 64px; padding: 0 40px;
@@ -508,28 +489,17 @@ export default function ChatPage() {
           border-bottom: 1px solid var(--border);
           backdrop-filter: blur(14px);
         }
-
         .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex-shrink: 0; }
         .nav-logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px var(--blue-glow); }
         .nav-name { font-family: var(--serif); font-size: 1.45rem; font-weight: 600; color: var(--text); letter-spacing: 0.01em; }
         .nav-name em { color: var(--blue); font-style: normal; }
-
         .nav-divider { width: 1px; height: 22px; background: var(--border); }
-
-        .nav-session {
-          display: flex; align-items: center; gap: 6px;
-          font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase;
-          color: var(--blue); padding: 4px 10px; border: 1px solid rgba(74,144,217,0.25);
-          border-radius: 4px; background: rgba(74,144,217,0.06);
-        }
+        .nav-session { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blue); padding: 4px 10px; border: 1px solid rgba(74,144,217,0.25); border-radius: 4px; background: rgba(74,144,217,0.06); }
         .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: pulse 2s infinite; }
-
         .nav-link { font-size: 0.8rem; font-weight: 500; color: var(--text-mid); text-decoration: none; padding: 6px 13px; border-radius: 20px; border: 1px solid transparent; transition: all 0.15s; }
         .nav-link:hover { color: var(--text); border-color: var(--border-mid); background: rgba(255,255,255,0.04); }
-
         .nav-spacer { flex: 1; }
 
-        /* ── User menu ── */
         .user-menu-wrap { position: relative; }
         .user-menu-btn { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-mid); border-radius: 20px; padding: 5px 12px 5px 5px; cursor: pointer; transition: all 0.15s; color: var(--text); }
         .user-menu-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
@@ -541,24 +511,13 @@ export default function ChatPage() {
         .user-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
         .user-dropdown-signout { color: #f87171 !important; }
         .user-dropdown-signout:hover { background: rgba(248,113,113,0.08) !important; color: #fca5a5 !important; }
-
-        /* Guest nav */
         .nav-register { font-size: 0.78rem; font-weight: 500; color: var(--text-mid); text-decoration: none; padding: 6px 13px; border-radius: 20px; border: 1px solid var(--border-mid); transition: all 0.15s; }
         .nav-register:hover { color: var(--text); }
         .nav-login { font-size: 0.78rem; font-weight: 500; color: white; text-decoration: none; padding: 7px 16px; border-radius: 20px; background: linear-gradient(135deg, var(--blue), #6baee8); box-shadow: 0 4px 14px var(--blue-glow); transition: all 0.15s; }
         .nav-login:hover { transform: translateY(-1px); }
 
-        /* ── Chat layout ── */
-        .chat-wrap {
-          display: flex; flex-direction: column; overflow: hidden;
-          max-width: 820px; width: 100%; margin: 0 auto; padding: 0 28px;
-          height: 100%;
-        }
-
-        .chat-subheader {
-          padding: 16px 0 14px; display: flex; align-items: center; gap: 14px;
-          flex-shrink: 0; border-bottom: 1px solid var(--border);
-        }
+        .chat-wrap { display: flex; flex-direction: column; overflow: hidden; max-width: 820px; width: 100%; margin: 0 auto; padding: 0 28px; height: 100%; }
+        .chat-subheader { padding: 16px 0 14px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
         .atlas-icon { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0; }
         .subheader-text h2 { font-family: var(--serif); font-size: 1.2rem; font-weight: 400; color: var(--text); }
         .subheader-text p { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; font-family: var(--mono); letter-spacing: 0.04em; }
@@ -567,26 +526,19 @@ export default function ChatPage() {
         .chip-blue { color: var(--blue); border-color: rgba(74,144,217,0.3); background: rgba(74,144,217,0.06); }
         .chip-gold { color: var(--gold); border-color: rgba(201,168,76,0.3); background: rgba(201,168,76,0.06); }
 
-        /* ── Messages ── */
         .messages-area { flex: 1; overflow-y: auto; padding: 22px 0 10px; display: flex; flex-direction: column; scroll-behavior: smooth; }
-
         .msg-row { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 16px; animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1); }
         .user-row { flex-direction: row-reverse; }
-
         .ai-avatar { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 3px 10px var(--blue-glow); flex-shrink: 0; }
         .user-avatar-chat { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--ink-4), var(--ink-3)); border: 1px solid var(--border-mid); display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 600; color: var(--text-mid); flex-shrink: 0; }
-
         .bubble-col { display: flex; flex-direction: column; gap: 6px; max-width: 66%; }
-
         .bubble { padding: 12px 16px; border-radius: 18px; font-size: 0.88rem; line-height: 1.68; }
         .bubble p { color: inherit; }
         .bubble time { display: block; font-size: 0.62rem; margin-top: 6px; opacity: 0.4; font-family: var(--mono); }
-
         .ai-bubble { background: var(--ink-2); border: 1px solid var(--border); border-bottom-left-radius: 5px; color: var(--text); }
         .user-bubble { background: linear-gradient(135deg, var(--blue), #5fa3e8); border-bottom-right-radius: 5px; color: white; box-shadow: 0 4px 16px var(--blue-glow); }
         .user-bubble time { color: rgba(255,255,255,0.55); }
 
-        /* ── TTS ── */
         .tts-row { display: flex; align-items: center; gap: 8px; padding-left: 2px; }
         .tts-btn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 0.72rem; font-weight: 500; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border-mid); background: var(--ink-3); color: var(--text-mid); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .tts-btn:hover { border-color: rgba(74,144,217,0.4); color: var(--text); background: rgba(74,144,217,0.1); }
@@ -594,13 +546,11 @@ export default function ChatPage() {
         .tts-btn.tts-loading { opacity: 0.6; cursor: wait; }
         .tts-label { font-family: var(--mono); font-size: 0.58rem; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; }
 
-        /* ── Typing dots ── */
         .typing-dots { display: flex; align-items: center; gap: 5px; padding: 14px 16px; }
         .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); display: inline-block; animation: bounce 1.3s infinite ease-in-out; }
         .dot:nth-child(2) { animation-delay: 0.15s; }
         .dot:nth-child(3) { animation-delay: 0.3s; }
 
-        /* ── Book cards ── */
         .book-recs { margin-top: 8px; }
         .book-recs-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
         .book-recs-grid { display: flex; flex-direction: column; gap: 6px; }
@@ -611,7 +561,6 @@ export default function ChatPage() {
         .book-rec-reason { font-size: 0.72rem; color: var(--text-mid); margin-bottom: 7px; font-style: italic; }
         .book-rec-cta { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); padding: 3px 8px; border: 1px solid rgba(201,168,76,0.3); border-radius: 3px; background: rgba(201,168,76,0.06); }
 
-        /* ── Input ── */
         .input-area { padding: 12px 0 20px; flex-shrink: 0; }
         .error-msg { font-size: 0.78rem; color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
         .input-wrapper { display: flex; align-items: flex-end; gap: 8px; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 18px; padding: 10px 10px 10px 18px; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -631,7 +580,6 @@ export default function ChatPage() {
         .powered-by { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
         .powered-by em { color: var(--gold); font-style: normal; }
 
-        /* ── Reader/Modal ── */
         .modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(8,8,10,0.82); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: backdropIn 0.2s ease both; }
         .modal { position: relative; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 16px; max-width: 720px; width: 100%; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,0.7); animation: modalIn 0.28s cubic-bezier(0.22,1,0.36,1) both; }
         .modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; }
@@ -665,7 +613,6 @@ export default function ChatPage() {
       `}</style>
 
       <div className="page-wrap">
-        {/* ── NAV ── */}
         <nav className="nav">
           <Link href="/" className="nav-brand">
             <div className="nav-logo">
@@ -676,18 +623,13 @@ export default function ChatPage() {
             </div>
             <span className="nav-name">At<em>las</em></span>
           </Link>
-
           <div className="nav-divider" />
-
           <div className="nav-session">
             <span className="live-dot" />
             Session Active
           </div>
-
           <Link href="/books" className="nav-link">Library</Link>
-
           <div className="nav-spacer" />
-
           {isLoggedIn ? (
             <UserMenu name={displayName} />
           ) : (
@@ -698,7 +640,6 @@ export default function ChatPage() {
           )}
         </nav>
 
-        {/* ── CHAT ── */}
         <main className="chat-wrap">
           <div className="chat-subheader">
             <div className="atlas-icon">
@@ -709,7 +650,7 @@ export default function ChatPage() {
             </div>
             <div className="subheader-text">
               <h2>Atlas · AI Bibliotherapist</h2>
-              <p>Powered by Gemini · ElevenLabs · Project Gutenberg</p>
+              <p>Powered by Gemini · ElevenLabs · MongoDB</p>
             </div>
             <div className="subheader-chips">
               <span className="chip chip-blue">Private Session</span>
@@ -755,7 +696,13 @@ export default function ChatPage() {
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                   )}
                 </button>
-                <button className="icon-btn send-btn" onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} type="button" title="Send">
+                <button
+                  className="icon-btn send-btn"
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || isLoading}
+                  type="button"
+                  title="Send"
+                >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </div>
