@@ -49,6 +49,7 @@ const GENRES = [
   { label: "🧘 Mindfulness",   genre: "subject:self-help mindfulness meditation" },
   { label: "💪 Productivity",  genre: "subject:self-help productivity habits" },
   { label: "🧠 Psychology",    genre: "subject:psychology self-help" },
+  { label: "💭 Philosophy",    genre: "subject:philosophy stoicism" },
   { label: "❤️ Relationships", genre: "subject:self-help relationships" },
   { label: "💰 Finance",       genre: "subject:self-help personal finance" },
   { label: "🌿 Healing",       genre: "subject:self-help anxiety depression healing" },
@@ -85,7 +86,7 @@ function starStr(rating: number): string {
   return "★".repeat(full) + "☆".repeat(5 - full);
 }
 
-// User Menu (shown when logged in) 
+// ── User Menu (shown when logged in) ─────────────────────────────────────────
 function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -144,7 +145,7 @@ function UserMenu({ name }: { name: string }) {
   );
 }
 
-// Book Detail Modal 
+// ── Book Detail Modal ─────────────────────────────────────────────────────────
 function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -208,7 +209,7 @@ function BookModal({ book, onClose }: { book: BookItem; onClose: () => void }) {
   );
 }
 
-// Skeleton & Cards 
+// ── Skeleton & Cards ──────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
     <div style={{ flexShrink: 0, width: 160 }}>
@@ -287,10 +288,11 @@ function Carousel({ books, loading, id, onSelect }: { books: BookItem[]; loading
   );
 }
 
-// Main Page 
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const { data: session, status } = useSession();
   const isLoggedIn = status === "authenticated";
+  const isLoading  = status === "loading";
 
   const [shelves, setShelves]           = useState<Record<string, BookItem[]>>({});
   const [loadingIds, setLoadingIds]     = useState<Set<string>>(new Set(SECTIONS.map(s => s.id).concat(["featured"])));
@@ -620,17 +622,18 @@ export default function LandingPage() {
         </Link>
 
         <div className="nav-links">
-          {isLoggedIn ? (
-            // Logged in: show app links + user menu
-            <>
-              <Link href="/chat" className="nav-link">Chat with Atlas</Link>
-              <Link href="/books" className="nav-link">My Library</Link>
-              <UserMenu name={session?.user?.name || session?.user?.email || "User"} />
-            </>
+          {/* Always show these links regardless of auth */}
+          {isLoggedIn && <Link href="/chat" className="nav-link">Chat with Atlas</Link>}
+          {isLoggedIn && <Link href="/books" className="nav-link">My Library</Link>}
+
+          {/* Auth-dependent buttons */}
+          {isLoading ? (
+            // Show nothing while session is loading to avoid flicker
+            <div style={{ width: 80, height: 34, borderRadius: 20, background: "rgba(255,255,255,0.04)" }} />
+          ) : isLoggedIn ? (
+            <UserMenu name={session?.user?.name || session?.user?.email || "User"} />
           ) : (
-            // Logged out: show login + register
             <>
-              <Link href="/chat" className="nav-link">Explore</Link>
               <Link href="/register" className="nav-register">Create account</Link>
               <Link href="/login" className="nav-login">Sign in →</Link>
             </>
