@@ -26,10 +26,10 @@ const fetchBookDeclaration: FunctionDeclaration = {
     or topic maps to a book that could genuinely help them. Use themes, emotions, or a specific 
     title/author as the query.`,
   parameters: {
-    type: "object" as any,
+    type: SchemaType.OBJECT,
     properties: {
       query: {
-        type: "string",
+        type: SchemaType.STRING,
         description: "Book title, author name, or emotional theme to search for. E.g. 'grief loss healing', 'Viktor Frankl meaning', 'anxiety mindfulness'",
       },
     },
