@@ -628,7 +628,7 @@ export default function ChatPage() {
             <span className="live-dot" />
             Session Active
           </div>
-          <Link href="/books" className="nav-link">Library</Link>
+          <Link href="/books" className="nav-link">Search Books</Link>
           <div className="nav-spacer" />
           {isLoggedIn ? (
             <UserMenu name={displayName} />

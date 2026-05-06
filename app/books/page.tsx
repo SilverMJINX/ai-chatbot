@@ -254,7 +254,7 @@ function UserMenu({ name }: { name: string }) {
               <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
               <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
             </svg>
-            My Library
+            Search Books
           </Link>
           <div className="dropdown-divider"/>
           <button className="dropdown-item signout" onClick={() => signOut({ callbackUrl: "/login" })}>
@@ -488,11 +488,11 @@ export default function BooksPage() {
         <div className="nav-divider"/>
         <div className="nav-badge">
           <span className="nav-badge-dot"/>
-          Book Library
+          Books
         </div>
 
         <Link href="/chat" className="nav-link">Chat with Atlas</Link>
-        <span className="nav-link nav-link-active">My Library</span>
+        <span className="nav-link nav-link-active">Search Books</span>
 
         <div className="nav-spacer"/>
 
