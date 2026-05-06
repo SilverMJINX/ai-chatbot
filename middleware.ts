@@ -1,30 +1,26 @@
-import { withAuth } from "next-auth/middleware";
+import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export default withAuth(
-  function middleware(req) {
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+
+  const publicPaths = ["/", "/login", "/register"];
+  if (publicPaths.includes(pathname) || pathname.startsWith("/api/auth")) {
     return NextResponse.next();
-  },
-  {
-    callbacks: {
-      authorized: ({ token, req }) => {
-        const { pathname } = req.nextUrl;
-
-        // Always allow public pages through
-        const publicPaths = ["/", "/login", "/register"];
-        if (publicPaths.includes(pathname)) return true;
-        if (pathname.startsWith("/api/auth")) return true;
-
-        // All other routes require login
-        return !!token;
-      },
-    },
   }
-);
+
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+
+  if (!token) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [
-    // Run on everything except Next.js internals and static files
     "/((?!_next/static|_next/image|favicon.ico|.*\\.png|.*\\.jpg|.*\\.svg|.*\\.ico).*)",
   ],
 };
