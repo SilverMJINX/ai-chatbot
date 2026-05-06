@@ -624,7 +624,7 @@ export default function LandingPage() {
         <div className="nav-links">
           {/* Always show these links regardless of auth */}
           {isLoggedIn && <Link href="/chat" className="nav-link">Chat with Atlas</Link>}
-          {isLoggedIn && <Link href="/books" className="nav-link">My Library</Link>}
+          {isLoggedIn && <Link href="/books" className="nav-link">Search Books</Link>}
 
           {/* Auth-dependent buttons */}
           {isLoading ? (
@@ -672,7 +672,7 @@ export default function LandingPage() {
                 <Link href="/login" className="btn-secondary">Sign in</Link>
               </>
             )}
-            <Link href="/books" className="btn-secondary">Browse Library</Link>
+            <Link href="/books" className="btn-secondary">Browse Books</Link>
           </div>
           <div className="hero-stats">
             <div><div className="hero-stat-num">150k+</div><div className="hero-stat-label">Books available</div></div>
