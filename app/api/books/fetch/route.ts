@@ -4,7 +4,7 @@ import clientPromise from "@/lib/mongodb";
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("q") || "";
   const client = await clientPromise;
-  const db = client.db();
+  const db = client.db("atlas-books");
 
   // Split query into individual words so "grief loss healing" matches more broadly
   const terms = query.trim().split(/\s+/).filter(Boolean);
