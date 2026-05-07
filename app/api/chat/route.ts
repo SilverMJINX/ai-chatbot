@@ -18,18 +18,27 @@ const SYSTEM_PROMPT = `You are Atlas, a warm and empathetic AI bibliotherapist. 
 - Never diagnose or prescribe; always remind users you're an AI, not a licensed therapist when appropriate
 - Be culturally sensitive and inclusive
 
-You have access to a library of books. When a book would genuinely help the user — to comfort, 
-inspire, or give perspective — use the fetch_book tool to retrieve an excerpt and naturally 
-weave it into your response. Don't fetch a book every message, only when it meaningfully adds value.
+BOOK RECOMMENDATIONS — STRICT RULES:
+You have access to a book library via the fetch_book tool. You MUST follow these rules exactly:
+
+1. ONLY call fetch_book when the user EXPLICITLY asks for a book, e.g.:
+   - "recommend a book", "suggest a book", "what should I read", "any book for this",
+     "can you recommend something to read", "what book", "find me a book"
+2. NEVER call fetch_book based on emotional context alone — just because someone is sad,
+   anxious, or grieving does NOT mean you should fetch a book.
+3. NEVER call fetch_book more than once per conversation turn.
+4. If the user has not asked for a book, respond with ONLY conversational text. No tool calls.
+5. When in doubt, do NOT call the tool. Default to conversation.
 
 Important: If a user expresses thoughts of self-harm or suicide, immediately provide crisis 
 resources (e.g., 03-76272929 Befrienders Kuala Lumpur) and encourage them to seek immediate help.`;
 
 const fetchBookDeclaration: FunctionDeclaration = {
   name: "fetch_book",
-  description: `Fetch a relevant book excerpt from the library when the user's emotional state 
-    or topic maps to a book that could genuinely help them. Use themes, emotions, or a specific 
-    title/author as the query.`,
+  description: `ONLY call this when the user has explicitly asked for a book recommendation 
+    using words like "recommend a book", "suggest a book", "what should I read", 
+    "find me a book", "any book for this", etc. 
+    DO NOT call this based on emotional context alone.`,
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
@@ -61,7 +70,6 @@ async function fetchBookFromDB(query: string): Promise<{ text: string; book: any
   }
 }
 
-// Safely extract text from a Gemini response — never throws
 function safeText(response: any): string {
   try {
     const text = response.text();
@@ -69,6 +77,18 @@ function safeText(response: any): string {
   } catch {
     return "";
   }
+}
+
+// Check if user message explicitly requests a book
+function userWantsBook(message: string): boolean {
+  const lower = message.toLowerCase();
+  const triggers = [
+    "recommend a book", "suggest a book", "what should i read", "any book",
+    "find me a book", "what book", "good book", "book recommendation",
+    "book for", "read something", "reading recommendation", "suggest something to read",
+    "recommend something to read", "book about", "books about", "any reading",
+  ];
+  return triggers.some(t => lower.includes(t));
 }
 
 export async function POST(req: NextRequest) {
@@ -79,18 +99,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
+    const lastMessage = messages[messages.length - 1];
+
+    if (lastMessage.role !== "user") {
+      return NextResponse.json({ error: "Last message must be from user" }, { status: 400 });
+    }
+
+    // If user hasn't asked for a book, don't give Gemini the tool at all
+    const includeTools = userWantsBook(lastMessage.content);
+
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       systemInstruction: SYSTEM_PROMPT,
-      tools,
+      ...(includeTools ? { tools } : {}),
     });
 
-    // History = everything EXCEPT the last user message (which we send via sendMessage)
-    // Also skip any leading assistant messages (the greeting) — Gemini requires
-    // history to start with a user turn.
     const rawHistory = messages.slice(0, -1);
-
-    // Find the first user message index so history always starts with "user"
     const firstUserIdx = rawHistory.findIndex(
       (m: { role: string }) => m.role === "user"
     );
@@ -113,19 +137,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const lastMessage = messages[messages.length - 1];
-
-    // Guard: last message must be from user
-    if (lastMessage.role !== "user") {
-      return NextResponse.json({ error: "Last message must be from user" }, { status: 400 });
-    }
-
     let result = await chat.sendMessage(lastMessage.content);
     let response = result.response;
 
     let foundBook: any = null;
     let loopCount = 0;
-    const MAX_LOOPS = 3;
+    const MAX_LOOPS = 1; // Only allow one book fetch per turn
 
     while (loopCount < MAX_LOOPS) {
       const fnCalls = response.functionCalls();
@@ -133,7 +150,6 @@ export async function POST(req: NextRequest) {
 
       loopCount++;
       const fnCall = fnCalls[0];
-
       if (fnCall.name !== "fetch_book") break;
 
       const query = (fnCall.args as { query?: string })?.query || "";
@@ -152,7 +168,6 @@ export async function POST(req: NextRequest) {
         ]);
         response = result.response;
       } catch (fnErr) {
-        // If the function response fails, break and use what we have
         console.error("Function response error:", fnErr);
         break;
       }
@@ -175,14 +190,12 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("Gemini API error:", error);
-
-    // Return a graceful message instead of a 500 so the chat doesn't break
     return NextResponse.json(
       {
         content: "I'm having a moment — could you try again? I'm still here with you.",
         book: undefined,
       },
-      { status: 200 } // return 200 so the frontend shows the message, not an error
+      { status: 200 }
     );
   }
 }
