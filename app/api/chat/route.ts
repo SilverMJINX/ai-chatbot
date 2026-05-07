@@ -22,13 +22,13 @@ BOOK RECOMMENDATIONS — STRICT RULES:
 You have access to a book library via the fetch_book tool. You MUST follow these rules exactly:
 
 1. ONLY call fetch_book when the user EXPLICITLY asks for a book, e.g.:
-   - "recommend a book", "suggest a book", "what should I read", "any book for this",
-     "can you recommend something to read", "what book", "find me a book"
-2. NEVER call fetch_book based on emotional context alone — just because someone is sad,
-   anxious, or grieving does NOT mean you should fetch a book.
-3. NEVER call fetch_book more than once per conversation turn.
-4. If the user has not asked for a book, respond with ONLY conversational text. No tool calls.
-5. When in doubt, do NOT call the tool. Default to conversation.
+   - "book", "recommend a book", "suggest a book", "what should I read", "any book",
+     "can you recommend something to read", "what book", "find me a book", "got any books"
+2. NEVER call fetch_book more than once per conversation turn.
+3. If the user has not asked for a book, respond with ONLY conversational text. No tool calls.
+4. When in doubt, do NOT call the tool. Default to conversation.
+5. After receiving book results, always respond warmly and naturally — introduce the book,
+   explain why it fits, and invite the user to continue the conversation.
 
 Important: If a user expresses thoughts of self-harm or suicide, immediately provide crisis 
 resources (e.g., 03-76272929 Befrienders Kuala Lumpur) and encourage them to seek immediate help.`;
@@ -36,8 +36,8 @@ resources (e.g., 03-76272929 Befrienders Kuala Lumpur) and encourage them to see
 const fetchBookDeclaration: FunctionDeclaration = {
   name: "fetch_book",
   description: `ONLY call this when the user has explicitly asked for a book recommendation 
-    using words like "recommend a book", "suggest a book", "what should I read", 
-    "find me a book", "any book for this", etc. 
+    using words like "book", "recommend a book", "suggest a book", "what should I read", 
+    "find me a book", "any book", "got any books", etc. 
     DO NOT call this based on emotional context alone.`,
   parameters: {
     type: SchemaType.OBJECT,
@@ -45,7 +45,7 @@ const fetchBookDeclaration: FunctionDeclaration = {
       query: {
         type: SchemaType.STRING,
         description:
-          "Book title, author name, or emotional theme to search for. E.g. 'grief loss healing', 'Viktor Frankl meaning', 'anxiety mindfulness'",
+          "Book title, author name, or emotional theme to search for based on the conversation context. E.g. 'grief loss healing', 'Viktor Frankl meaning', 'anxiety mindfulness'",
       },
     },
     required: ["query"],
@@ -79,14 +79,20 @@ function safeText(response: any): string {
   }
 }
 
-// Check if user message explicitly requests a book
+// Only give Gemini the tool when the user explicitly asks for a book
 function userWantsBook(message: string): boolean {
-  const lower = message.toLowerCase();
+  const lower = message.toLowerCase().trim();
+
+  // Single word exact match
+  if (lower === "book" || lower === "books") return true;
+
   const triggers = [
     "recommend a book", "suggest a book", "what should i read", "any book",
     "find me a book", "what book", "good book", "book recommendation",
-    "book for", "read something", "reading recommendation", "suggest something to read",
-    "recommend something to read", "book about", "books about", "any reading",
+    "book for", "book about", "books about", "got any book",
+    "read something", "reading recommendation", "suggest something to read",
+    "recommend something to read", "any reading", "give me a book",
+    "can you recommend", "suggest me a", "something to read",
   ];
   return triggers.some(t => lower.includes(t));
 }
@@ -105,7 +111,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Last message must be from user" }, { status: 400 });
     }
 
-    // If user hasn't asked for a book, don't give Gemini the tool at all
     const includeTools = userWantsBook(lastMessage.content);
 
     const model = genAI.getGenerativeModel({
@@ -141,44 +146,57 @@ export async function POST(req: NextRequest) {
     let response = result.response;
 
     let foundBook: any = null;
-    let loopCount = 0;
-    const MAX_LOOPS = 1; // Only allow one book fetch per turn
 
-    while (loopCount < MAX_LOOPS) {
-      const fnCalls = response.functionCalls();
-      if (!fnCalls || fnCalls.length === 0) break;
-
-      loopCount++;
+    // Handle at most one tool call per turn
+    const fnCalls = response.functionCalls();
+    if (fnCalls && fnCalls.length > 0) {
       const fnCall = fnCalls[0];
-      if (fnCall.name !== "fetch_book") break;
 
-      const query = (fnCall.args as { query?: string })?.query || "";
-      const { text: bookContent, book } = await fetchBookFromDB(query);
+      if (fnCall.name === "fetch_book") {
+        const query = (fnCall.args as { query?: string })?.query || lastMessage.content;
+        const { text: bookContent, book } = await fetchBookFromDB(query);
 
-      if (book) foundBook = book;
+        if (book) foundBook = book;
 
-      try {
-        result = await chat.sendMessage([
-          {
-            functionResponse: {
-              name: "fetch_book",
-              response: { content: bookContent },
+        try {
+          result = await chat.sendMessage([
+            {
+              functionResponse: {
+                name: "fetch_book",
+                response: { content: bookContent },
+              },
             },
-          },
-        ]);
-        response = result.response;
-      } catch (fnErr) {
-        console.error("Function response error:", fnErr);
-        break;
+          ]);
+          response = result.response;
+        } catch (fnErr) {
+          console.error("Function response error:", fnErr);
+          // Gemini failed to process the function response — build a graceful reply
+          // so the conversation continues naturally
+          const fallbackText = foundBook
+            ? `I found something that might resonate — "${foundBook.title}" by ${foundBook.author}. ${foundBook.reason ?? "I think it could offer some comfort or perspective."} Would you like to read or listen to it? And please, keep sharing — I'm here.`
+            : "I wasn't able to pull up a book just now, but I'm still here with you. What's been on your mind?";
+
+          return NextResponse.json({
+            content: fallbackText,
+            book: foundBook
+              ? { id: foundBook.id, title: foundBook.title, author: foundBook.author, reason: foundBook.reason ?? "Recommended by Atlas" }
+              : undefined,
+          });
+        }
       }
     }
 
-    const text =
-      safeText(response) ||
-      "I'm here with you. Could you tell me a bit more about what's on your mind?";
+    const text = safeText(response);
+
+    // If Gemini returned empty text after the function response, craft a warm reply
+    const finalText = text || (
+      foundBook
+        ? `I found a book that might speak to where you are — "${foundBook.title}" by ${foundBook.author}. ${foundBook.reason ?? "I hope it resonates."} Feel free to open it above, and let's keep talking.`
+        : "I'm here with you. What else would you like to share?"
+    );
 
     return NextResponse.json({
-      content: text,
+      content: finalText,
       book: foundBook
         ? {
             id:     foundBook.id,
