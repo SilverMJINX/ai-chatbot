@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 import Link from "next/link";
@@ -20,7 +20,7 @@ type BookRecommendation = {
   reason: string;
 };
 
-const ELEVEN_LABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
+const ELEVEN_LABS_API_KEY  = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY || "";
 const ELEVEN_LABS_VOICE_ID = "299hhEjoz44O862N5H4G";
 
 async function speakWithElevenLabs(text: string): Promise<HTMLAudioElement> {
@@ -122,14 +122,14 @@ function WaveformIcon() {
 
 // ── Book Reader Modal ──────────────────────────────────────────────────────
 function BookReader({ book, onClose }: { book: BookRecommendation; onClose: () => void }) {
-  const [text, setText] = useState("");
+  const [text, setText]     = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError]   = useState("");
   const [section, setSection] = useState(0);
   const { speak, stop, status } = useElevenLabsTTS();
 
   const sections = text.split(/\n{3,}/).map(s => s.trim()).filter(s => s.length > 100);
-  const current = sections[section] ?? "";
+  const current  = sections[section] ?? "";
 
   useEffect(() => {
     setLoading(true); setError("");
@@ -320,32 +320,41 @@ function ChatMessage({ message, onOpenBook, userInitial }: {
   );
 }
 
-// ── Main Chat Page ─────────────────────────────────────────────────────────
+// Main Chat Page 
 export default function ChatPage() {
   const { data: session, status: authStatus } = useSession();
   const isLoggedIn = authStatus === "authenticated";
+  const isAuthLoading = authStatus === "loading";
 
-  const displayName = session?.user?.name || session?.user?.email?.split("@")[0] || "Reader";
+  const displayName = useMemo(() => {
+    if (!session?.user) return "Reader";
+    return session.user.name || session.user.email?.split("@")[0] || "Reader";
+  }, [session]);
+
   const userInitial = displayName.charAt(0).toUpperCase();
 
-  const INITIAL_MESSAGE: Message = {
-    id: "init",
-    role: "assistant",
-    content: `Hi${isLoggedIn ? `, ${displayName}` : ""}! I'm Atlas, your AI bibliotherapist. I'm here to listen and find the perfect book for how you're feeling. How are you today?`,
+  const initialMessage: Message = useMemo(() => ({
+    id:        "init",
+    role:      "assistant",
+    content:   `Hi${isLoggedIn && displayName !== "Reader" ? `, ${displayName}` : ""}! I'm Atlas, your AI bibliotherapist. I'm here to listen and find the perfect book for how you're feeling. How are you today?`,
     timestamp: new Date(),
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []); // intentionally empty deps — we only want this once on mount
 
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
-  const [input, setInput] = useState("");
+  const [messages, setMessages]   = useState<Message[]>([initialMessage]);
+  const [input, setInput]         = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [openBook, setOpenBook] = useState<BookRecommendation | null>(null);
-  const recognitionRef = useRef<any>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [error, setError]         = useState<string | null>(null);
+  const [openBook, setOpenBook]   = useState<BookRecommendation | null>(null);
+  const recognitionRef  = useRef<any>(null);
+  const messagesEndRef  = useRef<HTMLDivElement>(null);
+  const textareaRef     = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -358,9 +367,9 @@ export default function ChatPage() {
     setError(null);
 
     const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: text.trim(),
+      id:        Date.now().toString(),
+      role:      "user",
+      content:   text.trim(),
       timestamp: new Date(),
     };
 
@@ -370,43 +379,53 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
+      // Only filter the greeting (role=assistant, id=init) so Gemini doesn't
+      // get a leading assistant turn, which it rejects
+      const payload = updatedMessages
+        .filter(m => !(m.id === "init" && m.role === "assistant"))
+        .map(m => ({ role: m.role, content: m.content }));
+
       const response = await fetch("/api/chat", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        // Filter out the init message — Gemini doesn't want a leading assistant turn
-        body: JSON.stringify({
-          messages: updatedMessages
-            .filter(m => m.id !== "init")
-            .map(m => ({ role: m.role, content: m.content })),
-        }),
+        body:    JSON.stringify({ messages: payload }),
       });
 
-      if (!response.ok) throw new Error("Failed to get response");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error || `Server error ${response.status}`);
+      }
 
-      let data: any;
-      try { data = await response.json(); } catch { throw new Error("Invalid response format"); }
-      if (!data?.content) throw new Error("Invalid response format");
+      const data = await response.json();
 
-      // API now returns an optional `book` object when a fetch_book tool was used
+      if (!data?.content) throw new Error("Empty response from AI");
+
       const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.content,
+        id:        (Date.now() + 1).toString(),
+        role:      "assistant",
+        content:   data.content,
         timestamp: new Date(),
-        books: data.book
+        books:     data.book
           ? [{
-              id: data.book.id,
-              title: data.book.title,
+              id:      data.book.id,
+              title:   data.book.title,
               authors: [{ name: data.book.author }],
-              reason: data.book.reason ?? "Recommended for you",
+              reason:  data.book.reason ?? "Recommended for you",
             }]
           : undefined,
       };
 
       setMessages(prev => [...prev, aiMessage]);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Chat error:", e);
-      setError("Something went wrong. Please try again.");
+      const errorMessage: Message = {
+        id:        (Date.now() + 2).toString(),
+        role:      "assistant",
+        content:   "I'm having a moment — could you try again? I'm still here with you.",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      setError(null); // clear the banner — the message is already in chat
     } finally {
       setIsLoading(false);
     }
@@ -424,14 +443,17 @@ export default function ChatPage() {
     const w = window as any;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     const recognition = new SR();
-    recognition.continuous = false; recognition.interimResults = true; recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
     recognition.onresult = (event: any) => {
       setInput(Array.from(event.results).map((r: any) => r[0].transcript).join(""));
     };
-    recognition.onend = () => setIsListening(false);
+    recognition.onend   = () => setIsListening(false);
     recognition.onerror = () => { setIsListening(false); setError("Voice recognition failed."); };
     recognitionRef.current = recognition;
-    recognition.start(); setIsListening(true);
+    recognition.start();
+    setIsListening(true);
   };
 
   return (
@@ -466,29 +488,22 @@ export default function ChatPage() {
         ::-webkit-scrollbar-track { background: var(--ink-2); }
         ::-webkit-scrollbar-thumb { background: var(--ink-4); border-radius: 2px; }
 
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        @keyframes bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
-        @keyframes waveBar { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes ttsGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(74,144,217,0.3); } 50% { box-shadow: 0 0 0 6px rgba(74,144,217,0); } }
-        @keyframes dropdownIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes backdropIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes modalIn { from { opacity: 0; transform: translateY(24px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-        @keyframes voicePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.35); } 50% { box-shadow: 0 0 0 6px rgba(201,168,76,0); } }
+        @keyframes fadeUp    { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse     { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes bounce    { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-6px); opacity: 1; } }
+        @keyframes waveBar   { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+        @keyframes spin      { to { transform: rotate(360deg); } }
+        @keyframes ttsGlow   { 0%, 100% { box-shadow: 0 0 0 0 rgba(74,144,217,0.3); } 50% { box-shadow: 0 0 0 6px rgba(74,144,217,0); } }
+        @keyframes dropdownIn{ from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes backdropIn{ from { opacity: 0; } to { opacity: 1; } }
+        @keyframes modalIn   { from { opacity: 0; transform: translateY(24px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes voicePulse{ 0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.35); } 50% { box-shadow: 0 0 0 6px rgba(201,168,76,0); } }
 
         .spin { animation: spin 0.7s linear infinite; }
 
         .page-wrap { display: grid; grid-template-rows: 64px 1fr; height: 100vh; }
 
-        .nav {
-          position: sticky; top: 0; z-index: 50;
-          height: 64px; padding: 0 40px;
-          display: flex; align-items: center; gap: 12px;
-          background: rgba(13,13,15,0.9);
-          border-bottom: 1px solid var(--border);
-          backdrop-filter: blur(14px);
-        }
+        .nav { position: sticky; top: 0; z-index: 50; height: 64px; padding: 0 40px; display: flex; align-items: center; gap: 12px; background: rgba(13,13,15,0.9); border-bottom: 1px solid var(--border); backdrop-filter: blur(14px); }
         .nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex-shrink: 0; }
         .nav-logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px var(--blue-glow); }
         .nav-name { font-family: var(--serif); font-size: 1.45rem; font-weight: 600; color: var(--text); letter-spacing: 0.01em; }
@@ -500,6 +515,7 @@ export default function ChatPage() {
         .nav-link:hover { color: var(--text); border-color: var(--border-mid); background: rgba(255,255,255,0.04); }
         .nav-spacer { flex: 1; }
 
+        /* User menu */
         .user-menu-wrap { position: relative; }
         .user-menu-btn { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-mid); border-radius: 20px; padding: 5px 12px 5px 5px; cursor: pointer; transition: all 0.15s; color: var(--text); }
         .user-menu-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.18); }
@@ -516,6 +532,7 @@ export default function ChatPage() {
         .nav-login { font-size: 0.78rem; font-weight: 500; color: white; text-decoration: none; padding: 7px 16px; border-radius: 20px; background: linear-gradient(135deg, var(--blue), #6baee8); box-shadow: 0 4px 14px var(--blue-glow); transition: all 0.15s; }
         .nav-login:hover { transform: translateY(-1px); }
 
+        /* Chat layout */
         .chat-wrap { display: flex; flex-direction: column; overflow: hidden; max-width: 820px; width: 100%; margin: 0 auto; padding: 0 28px; height: 100%; }
         .chat-subheader { padding: 16px 0 14px; display: flex; align-items: center; gap: 14px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
         .atlas-icon { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, var(--blue), #6baee8); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px var(--blue-glow); flex-shrink: 0; }
@@ -526,6 +543,7 @@ export default function ChatPage() {
         .chip-blue { color: var(--blue); border-color: rgba(74,144,217,0.3); background: rgba(74,144,217,0.06); }
         .chip-gold { color: var(--gold); border-color: rgba(201,168,76,0.3); background: rgba(201,168,76,0.06); }
 
+        /* Messages */
         .messages-area { flex: 1; overflow-y: auto; padding: 22px 0 10px; display: flex; flex-direction: column; scroll-behavior: smooth; }
         .msg-row { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 16px; animation: fadeUp 0.28s cubic-bezier(0.22,1,0.36,1); }
         .user-row { flex-direction: row-reverse; }
@@ -539,6 +557,7 @@ export default function ChatPage() {
         .user-bubble { background: linear-gradient(135deg, var(--blue), #5fa3e8); border-bottom-right-radius: 5px; color: white; box-shadow: 0 4px 16px var(--blue-glow); }
         .user-bubble time { color: rgba(255,255,255,0.55); }
 
+        /* TTS */
         .tts-row { display: flex; align-items: center; gap: 8px; padding-left: 2px; }
         .tts-btn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); font-size: 0.72rem; font-weight: 500; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border-mid); background: var(--ink-3); color: var(--text-mid); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .tts-btn:hover { border-color: rgba(74,144,217,0.4); color: var(--text); background: rgba(74,144,217,0.1); }
@@ -546,11 +565,13 @@ export default function ChatPage() {
         .tts-btn.tts-loading { opacity: 0.6; cursor: wait; }
         .tts-label { font-family: var(--mono); font-size: 0.58rem; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; }
 
+        /* Typing */
         .typing-dots { display: flex; align-items: center; gap: 5px; padding: 14px 16px; }
         .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); display: inline-block; animation: bounce 1.3s infinite ease-in-out; }
         .dot:nth-child(2) { animation-delay: 0.15s; }
         .dot:nth-child(3) { animation-delay: 0.3s; }
 
+        /* Book recs */
         .book-recs { margin-top: 8px; }
         .book-recs-label { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
         .book-recs-grid { display: flex; flex-direction: column; gap: 6px; }
@@ -561,6 +582,7 @@ export default function ChatPage() {
         .book-rec-reason { font-size: 0.72rem; color: var(--text-mid); margin-bottom: 7px; font-style: italic; }
         .book-rec-cta { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); padding: 3px 8px; border: 1px solid rgba(201,168,76,0.3); border-radius: 3px; background: rgba(201,168,76,0.06); }
 
+        /* Input */
         .input-area { padding: 12px 0 20px; flex-shrink: 0; }
         .error-msg { font-size: 0.78rem; color: #f87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); border-radius: 8px; padding: 8px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
         .input-wrapper { display: flex; align-items: flex-end; gap: 8px; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 18px; padding: 10px 10px 10px 18px; transition: border-color 0.2s, box-shadow 0.2s; }
@@ -580,6 +602,7 @@ export default function ChatPage() {
         .powered-by { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
         .powered-by em { color: var(--gold); font-style: normal; }
 
+        /* Modal */
         .modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(8,8,10,0.82); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 24px; animation: backdropIn 0.2s ease both; }
         .modal { position: relative; background: var(--ink-2); border: 1px solid var(--border-mid); border-radius: 16px; max-width: 720px; width: 100%; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 32px 80px rgba(0,0,0,0.7); animation: modalIn 0.28s cubic-bezier(0.22,1,0.36,1) both; }
         .modal-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0; }
@@ -599,17 +622,8 @@ export default function ChatPage() {
         .modal-status { padding: 48px 0; text-align: center; font-size: 0.88rem; }
         .reader-text { white-space: pre-wrap; word-break: break-word; font-family: var(--serif); font-size: 1rem; line-height: 1.9; color: var(--text-mid); }
 
-        @media (max-width: 860px) {
-          .nav { padding: 0 20px; }
-          .chat-wrap { padding: 0 16px; }
-          .subheader-chips { display: none; }
-          .bubble-col { max-width: 78%; }
-        }
-        @media (max-width: 540px) {
-          .nav-session { display: none; }
-          .nav-link { display: none; }
-          .bubble-col { max-width: 86%; }
-        }
+        @media (max-width: 860px) { .nav { padding: 0 20px; } .chat-wrap { padding: 0 16px; } .subheader-chips { display: none; } .bubble-col { max-width: 78%; } }
+        @media (max-width: 540px)  { .nav-session { display: none; } .nav-link { display: none; } .bubble-col { max-width: 86%; } }
       `}</style>
 
       <div className="page-wrap">
@@ -624,13 +638,12 @@ export default function ChatPage() {
             <span className="nav-name">At<em>las</em></span>
           </Link>
           <div className="nav-divider" />
-          <div className="nav-session">
-            <span className="live-dot" />
-            Session Active
-          </div>
+          <div className="nav-session"><span className="live-dot" />Session Active</div>
           <Link href="/books" className="nav-link">Search Books</Link>
           <div className="nav-spacer" />
-          {isLoggedIn ? (
+          {isAuthLoading ? (
+            <div style={{ width: 80, height: 34, borderRadius: 20, background: "rgba(255,255,255,0.04)" }} />
+          ) : isLoggedIn ? (
             <UserMenu name={displayName} />
           ) : (
             <>
@@ -690,11 +703,10 @@ export default function ChatPage() {
                   title={isListening ? "Stop listening" : "Voice input"}
                   type="button"
                 >
-                  {isListening ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-                  ) : (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                  )}
+                  {isListening
+                    ? <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                    : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                  }
                 </button>
                 <button
                   className="icon-btn send-btn"

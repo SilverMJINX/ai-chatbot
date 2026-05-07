@@ -45,35 +45,29 @@ const fetchBookDeclaration: FunctionDeclaration = {
 
 const tools: Tool[] = [{ functionDeclarations: [fetchBookDeclaration] }];
 
-async function fetchBookFromDB(
-  query: string
-): Promise<{ text: string; book: any | null }> {
+async function fetchBookFromDB(query: string): Promise<{ text: string; book: any | null }> {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-
   try {
-    const res = await fetch(
-      `${baseUrl}/api/books/fetch?q=${encodeURIComponent(query)}`
-    );
-
-    if (!res.ok) {
-      return {
-        text: "No matching book found in the library for that query.",
-        book: null,
-      };
-    }
-
+    const res = await fetch(`${baseUrl}/api/books/fetch?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return { text: "No matching book found in the library for that query.", book: null };
     const book = await res.json();
-
     return {
       text: `📖 "${book.title}" by ${book.author}:\n\n${book.excerpt}`,
       book,
     };
   } catch (err) {
     console.error("Book fetch error:", err);
-    return {
-      text: "Sorry, I couldn't retrieve a book right now.",
-      book: null,
-    };
+    return { text: "Sorry, I couldn't retrieve a book right now.", book: null };
+  }
+}
+
+// Safely extract text from a Gemini response — never throws
+function safeText(response: any): string {
+  try {
+    const text = response.text();
+    return text?.trim() || "";
+  } catch {
+    return "";
   }
 }
 
@@ -91,12 +85,25 @@ export async function POST(req: NextRequest) {
       tools,
     });
 
-    const history = messages
-      .slice(0, -1)
-      .map((msg: { role: string; content: string }) => ({
-        role: msg.role === "assistant" ? "model" : "user",
-        parts: [{ text: msg.content }],
-      }));
+    // History = everything EXCEPT the last user message (which we send via sendMessage)
+    // Also skip any leading assistant messages (the greeting) — Gemini requires
+    // history to start with a user turn.
+    const rawHistory = messages.slice(0, -1);
+
+    // Find the first user message index so history always starts with "user"
+    const firstUserIdx = rawHistory.findIndex(
+      (m: { role: string }) => m.role === "user"
+    );
+
+    const history =
+      firstUserIdx === -1
+        ? []
+        : rawHistory
+            .slice(firstUserIdx)
+            .map((msg: { role: string; content: string }) => ({
+              role: msg.role === "assistant" ? "model" : "user",
+              parts: [{ text: msg.content }],
+            }));
 
     const chat = model.startChat({
       history,
@@ -108,26 +115,33 @@ export async function POST(req: NextRequest) {
 
     const lastMessage = messages[messages.length - 1];
 
+    // Guard: last message must be from user
+    if (lastMessage.role !== "user") {
+      return NextResponse.json({ error: "Last message must be from user" }, { status: 400 });
+    }
+
     let result = await chat.sendMessage(lastMessage.content);
     let response = result.response;
 
     let foundBook: any = null;
-
     let loopCount = 0;
     const MAX_LOOPS = 3;
 
-    while (response.functionCalls()?.length && loopCount < MAX_LOOPS) {
+    while (loopCount < MAX_LOOPS) {
+      const fnCalls = response.functionCalls();
+      if (!fnCalls || fnCalls.length === 0) break;
+
       loopCount++;
+      const fnCall = fnCalls[0];
 
-      const fnCall = response.functionCalls()![0];
+      if (fnCall.name !== "fetch_book") break;
 
-      if (fnCall.name === "fetch_book") {
-        const { text: bookContent, book } = await fetchBookFromDB(
-          (fnCall.args as { query: string }).query
-        );
+      const query = (fnCall.args as { query?: string })?.query || "";
+      const { text: bookContent, book } = await fetchBookFromDB(query);
 
-        foundBook = book;
+      if (book) foundBook = book;
 
+      try {
         result = await chat.sendMessage([
           {
             functionResponse: {
@@ -136,33 +150,39 @@ export async function POST(req: NextRequest) {
             },
           },
         ]);
-
         response = result.response;
-      } else {
+      } catch (fnErr) {
+        // If the function response fails, break and use what we have
+        console.error("Function response error:", fnErr);
         break;
       }
     }
 
     const text =
-      response.text() ||
+      safeText(response) ||
       "I'm here with you. Could you tell me a bit more about what's on your mind?";
 
     return NextResponse.json({
       content: text,
       book: foundBook
         ? {
-            id: foundBook.id,
-            title: foundBook.title,
+            id:     foundBook.id,
+            title:  foundBook.title,
             author: foundBook.author,
-            reason: "Recommended by Atlas",
+            reason: foundBook.reason ?? "Recommended by Atlas",
           }
         : undefined,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API error:", error);
+
+    // Return a graceful message instead of a 500 so the chat doesn't break
     return NextResponse.json(
-      { error: "Failed to generate response" },
-      { status: 500 }
+      {
+        content: "I'm having a moment — could you try again? I'm still here with you.",
+        book: undefined,
+      },
+      { status: 200 } // return 200 so the frontend shows the message, not an error
     );
   }
 }
