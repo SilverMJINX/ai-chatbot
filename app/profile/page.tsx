@@ -15,7 +15,7 @@ type UserProfile = {
 // Helpers 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-MY", {
-    year: "month", month: "long", day: "numeric",
+    year: "numeric", month: "long", day: "numeric",
   });
 }
 
