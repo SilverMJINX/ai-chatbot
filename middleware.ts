@@ -6,6 +6,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const publicPaths = ["/", "/login", "/register"];
+  const PROTECTED = ["/chat", "/books", "/profile"];
   if (publicPaths.includes(pathname) || pathname.startsWith("/api/auth")) {
     return NextResponse.next();
   }
