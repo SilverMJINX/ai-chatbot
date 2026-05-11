@@ -46,14 +46,14 @@ const SECTIONS: Section[] = [
 ];
 
 const GENRES = [
-  { label: "🧘 Mindfulness",   genre: "subject:self-help mindfulness meditation" },
-  { label: "💪 Productivity",  genre: "subject:self-help productivity habits" },
-  { label: "🧠 Psychology",    genre: "subject:psychology self-help" },
-  { label: "💭 Philosophy",    genre: "subject:philosophy stoicism" },
-  { label: "❤️ Relationships", genre: "subject:self-help relationships" },
-  { label: "💰 Finance",       genre: "subject:self-help personal finance" },
-  { label: "🌿 Healing",       genre: "subject:self-help anxiety depression healing" },
-  { label: "🚀 Growth",        genre: "subject:self-help success motivation" },
+  { label: "🧘 Mindfulness",   subject: "subject:self-help mindfulness meditation" },
+  { label: "💪 Productivity",  subject: "subject:self-help productivity habits" },
+  { label: "🧠 Psychology",    subject: "subject:psychology self-help" },
+  { label: "💭 Philosophy",    subject: "subject:philosophy stoicism" },
+  { label: "❤️ Relationships", subject: "subject:self-help relationships" },
+  { label: "💰 Finance",       subject: "subject:self-help personal finance" },
+  { label: "🌿 Healing",       subject: "subject:self-help anxiety depression healing" },
+  { label: "🚀 Growth",        subject: "subject:self-help success motivation" },
 ];
 
 async function fetchBooks(query: string, maxResults = 16, orderBy = "relevance"): Promise<BookItem[]> {
