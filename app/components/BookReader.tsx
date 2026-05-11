@@ -3,7 +3,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useElevenLabsTTS } from '@/hooks/useElevenLabsTTS';
 
 interface Book {
-  id: number;
+  id: number | string;
+  mongoId?: string;
   title: string;
   authors: { name: string }[];
   formats: Record<string, string>;
@@ -41,6 +42,9 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Use mongoId for manually added books, id for Gutenberg books
+  const textId = book.mongoId ?? book.id;
+
   // Fetch text or PDF
   useEffect(() => {
     setLoading(true);
@@ -48,7 +52,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     setPdfUrl('');
     setText('');
 
-    fetch(`/api/books/${book.id}/text`)
+    fetch(`/api/books/${textId}/text`)
       .then(async r => {
         if (!r.ok) throw new Error('unavailable');
 
@@ -64,7 +68,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
           throw new Error('unavailable');
         }
 
-        // Normal plain text (Gutenberg)
+        // Normal plain text (Gutenberg or fullText from DB)
         const t = await r.text();
         console.log('text bytes:', t.length, '| chapters:', splitChapters(t).length);
         setText(t);
@@ -73,7 +77,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
       .finally(() => setLoading(false));
 
     return () => { clearInterval(timerRef.current!); };
-  }, [book.id]);
+  }, [textId]);
 
   const chapters = splitChapters(text);
   const lines    = splitLines(chapters[chapter] ?? '');
@@ -176,7 +180,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
           />
         )}
 
-        {/* TTS reader (Gutenberg plain text only) */}
+        {/* TTS reader (plain text only) */}
         {!loading && !error && !pdfUrl && (
           <>
             {/* Controls bar */}

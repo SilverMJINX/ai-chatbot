@@ -55,7 +55,6 @@ export async function GET(req: NextRequest) {
       const res = await fetch(textUrl, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const raw = await res.text();
-        // Strip Gutenberg boilerplate and grab first 3000 chars
         const startMatch = raw.match(/\*{3}\s*START OF (?:THE|THIS) PROJECT GUTENBERG EBOOK[^\n]*/i);
         const startIdx = startMatch?.index !== undefined
           ? raw.indexOf("\n", startMatch.index) + 1
@@ -72,9 +71,14 @@ export async function GET(req: NextRequest) {
     ? book.authors.map((a: any) => a.name).join(", ")
     : book.author || "Unknown";
 
+  const mongoId = book._id.toString();
+  const gutenbergId = book.gutenbergId ?? null;
+
   return NextResponse.json({
-    id:          book._id.toString(),
-    gutenbergId: book.gutenbergId ?? null,
+    // Use gutenbergId as id for Gutenberg books, mongoId for manual books
+    id:          gutenbergId ?? mongoId,
+    mongoId,
+    gutenbergId,
     title:       book.title,
     author,
     tags:        book.tags || [],
