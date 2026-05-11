@@ -14,7 +14,6 @@ function splitChapters(text: string): string[] {
     .split(/(?=\bCHAPTER\s+[IVXLCDM\d]+\b)/i)
     .map(c => c.trim())
     .filter(Boolean);
-  // If no chapter headings found, return whole text as one chunk
   return chunks.length > 1 ? chunks : [text.trim()];
 }
 
@@ -30,6 +29,7 @@ const BASE_INTERVAL = 2800;
 
 export function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [text, setText]       = useState('');
+  const [pdfUrl, setPdfUrl]   = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [chapter, setChapter] = useState(0);
@@ -41,18 +41,37 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Fetch text 
+  // Fetch text or PDF
   useEffect(() => {
     setLoading(true);
     setError('');
+    setPdfUrl('');
+    setText('');
+
     fetch(`/api/books/${book.id}/text`)
-      .then(r => r.ok ? r.text() : Promise.reject('unavailable'))
-      .then(t => {
+      .then(async r => {
+        if (!r.ok) throw new Error('unavailable');
+
+        const contentType = r.headers.get('content-type') ?? '';
+
+        // PDF book — get Drive preview URL
+        if (contentType.includes('application/json')) {
+          const data = await r.json();
+          if (data.type === 'pdf') {
+            setPdfUrl(data.url);
+            return;
+          }
+          throw new Error('unavailable');
+        }
+
+        // Normal plain text (Gutenberg)
+        const t = await r.text();
         console.log('text bytes:', t.length, '| chapters:', splitChapters(t).length);
         setText(t);
       })
       .catch(() => setError('Full text unavailable for this book.'))
       .finally(() => setLoading(false));
+
     return () => { clearInterval(timerRef.current!); };
   }, [book.id]);
 
@@ -61,7 +80,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
   const total    = lines.length;
   const progress = total > 0 ? ((lineIdx + 1) / total) * 100 : 0;
 
-  // Reset on chapter change 
+  // Reset on chapter change
   useEffect(() => {
     stop();
     setPlaying(false);
@@ -69,17 +88,17 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     clearInterval(timerRef.current!);
   }, [chapter]);
 
-  // Scroll active line into view 
+  // Scroll active line into view
   useEffect(() => {
     lineRefs.current[lineIdx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [lineIdx]);
 
-  // Speak active line whenever it changes while playing 
+  // Speak active line whenever it changes while playing
   useEffect(() => {
     if (playing && lines[lineIdx]) speak(lines[lineIdx]);
   }, [lineIdx, playing]);
 
-  // Auto-advance timer 
+  // Auto-advance timer
   const startTimer = useCallback(() => {
     clearInterval(timerRef.current!);
     timerRef.current = setInterval(() => {
@@ -100,7 +119,7 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
     return () => clearInterval(timerRef.current!);
   }, [playing, startTimer]);
 
-  // Controls 
+  // Controls
   const togglePlay = () => {
     if (playing) { stop(); setPlaying(false); }
     else { setPlaying(true); }
@@ -147,7 +166,18 @@ export function BookReader({ book, onClose }: { book: Book; onClose: () => void 
         {loading && <p className="reader-status">Loading text…</p>}
         {error   && <p className="reader-status error">{error}</p>}
 
-        {!loading && !error && (
+        {/* PDF viewer */}
+        {!loading && !error && pdfUrl && (
+          <iframe
+            src={pdfUrl}
+            style={{ width: '100%', height: '80vh', border: 'none', borderRadius: 8 }}
+            allow="autoplay"
+            title={book.title}
+          />
+        )}
+
+        {/* TTS reader (Gutenberg plain text only) */}
+        {!loading && !error && !pdfUrl && (
           <>
             {/* Controls bar */}
             <div className="reader-tts-bar">
