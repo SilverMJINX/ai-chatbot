@@ -107,19 +107,17 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
 
   useEffect(() => { posRef.current = position; }, [position]);
 
+  // Fetch text — uses book.id (MongoDB _id) which works for both
+  // Gutenberg books and manually added books with fullText in DB
   useEffect(() => {
-    if (!book.gutenbergId) {
-      setError("No plain text available for this book.");
-      setLoading(false);
-      return;
-    }
     setLoading(true);
-    fetch(`/api/books/${book.gutenbergId}/text`)
+    setError("");
+    fetch(`/api/books/${book.id}/text`)
       .then(r => r.ok ? r.text() : Promise.reject("unavailable"))
       .then(t => setParagraphs(splitParagraphs(t)))
       .catch(() => setError("Could not load book text."))
       .finally(() => setLoading(false));
-  }, [book.id, book.gutenbergId]);
+  }, [book.id]);
 
   useEffect(() => {
     fetch(`/api/progress?bookId=${book.id}`)
