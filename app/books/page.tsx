@@ -5,7 +5,7 @@ import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
-// Types 
+// Types
 
 /** Gutenberg API shape */
 interface GutenbergBook {
@@ -48,7 +48,7 @@ interface Book {
   source: "curated" | "gutenberg";
 }
 
-// Text helpers 
+// Text helpers
 
 function stripBoilerplate(text: string): string {
   text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -92,8 +92,6 @@ function splitParagraphs(section: string): string[] {
   });
 }
 
-const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
-
 // Normalise helpers 
 
 function fromCurated(b: CuratedBook): Book {
@@ -134,7 +132,7 @@ function textApiPath(book: Book): string {
   return `/api/books/${book.gutenbergId}/text`;
 }
 
-// Nav
+// Nav 
 
 function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
@@ -188,7 +186,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const [position, setPosition]   = useState(0);  // paragraph index within chapter
   const [saved, setSaved]         = useState(false);
   const [playing, setPlaying]     = useState(false);
-  const [speed, setSpeed]         = useState<number>(1);
 
   const { speak, stop, status: ttsStatus } = useElevenLabsTTS();
 
@@ -196,7 +193,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const posRef     = useRef(0);
   const playingRef = useRef(false);
-  const speedRef   = useRef(1);
   const linesRef   = useRef<string[]>([]);
 
   // Fetch text
@@ -226,7 +222,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
 
   useEffect(() => { linesRef.current = lines; }, [lines]);
   useEffect(() => { posRef.current = position; }, [position]);
-  useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
   // Scroll to restored position after load
@@ -303,13 +298,12 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
       if (!playingRef.current) return;
       const next = idx + 1;
       if (next >= linesRef.current.length) { setPlaying(false); playingRef.current = false; return; }
-      const gap = Math.round(350 / speedRef.current);
       setTimeout(() => {
         if (!playingRef.current) return;
         setPosition(next);
         saveProgress(next);
         speakParagraph(next);
-      }, gap);
+      }, 350);
     });
   }, [speak, saveProgress]);
 
@@ -367,13 +361,16 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar + label — own clean row */}
       {!loading && !error && lines.length > 0 && (
-        <div className="reader-progress-bar">
-          <div className="reader-progress-fill" style={{ width: `${progress}%` }}/>
-          <span className="reader-progress-label">
-            {Math.round(progress)}% · {position + 1} / {total}
-          </span>
+        <div className="reader-progress-wrap">
+          <div className="reader-progress-bar">
+            <div className="reader-progress-fill" style={{ width: `${progress}%` }}/>
+          </div>
+          <div className="reader-progress-info">
+            <span className="reader-progress-pct">{Math.round(progress)}%</span>
+            <span className="reader-progress-count">{position + 1} / {total}</span>
+          </div>
         </div>
       )}
 
@@ -391,23 +388,12 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
             </button>
             <button className="ctrl-chip" onClick={() => skipLines(1)}>1 ›</button>
             <button className="ctrl-chip" onClick={() => skipLines(5)}>5 ⏭</button>
-            <div style={{ flex: 1 }}/>
-            <span className="ctrl-label">Speed</span>
-            {SPEED_OPTIONS.map(s => (
-              <button
-                key={s}
-                className={`ctrl-chip${speed === s ? " active" : ""}`}
-                onClick={() => { setSpeed(s); speedRef.current = s; }}
-              >{s}×</button>
-            ))}
           </div>
           {chapters.length > 1 && (
             <div className="reader-btn-row">
               <button className="ctrl-chip" disabled={chapter === 0} onClick={() => setChapter(c => c - 1)}>← Prev chapter</button>
               <span className="ctrl-label">Chapter {chapter + 1} of {chapters.length}</span>
               <button className="ctrl-chip" disabled={chapter >= chapters.length - 1} onClick={() => setChapter(c => c + 1)}>Next chapter →</button>
-              <div style={{ flex: 1 }}/>
-              <span className="ctrl-label" style={{ opacity: 0.45 }}>ElevenLabs TTS</span>
             </div>
           )}
         </div>
@@ -472,7 +458,7 @@ function SkeletonCard() {
   );
 }
 
-// Main page 
+// Main page
 
 const SUGGESTIONS = [
   "loneliness", "friendship", "grief", "anxiety", "resilience",
@@ -735,12 +721,15 @@ export default function BooksPage() {
         .reader-close{width:32px;height:32px;border-radius:8px;border:1px solid var(--border-mid);background:var(--ink-3);color:var(--text-mid);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;flex-shrink:0;}
         .reader-close:hover{background:var(--ink-4);color:var(--text);}
 
-        .reader-progress-bar{height:3px;background:var(--ink-3);flex-shrink:0;position:relative;}
+        .reader-progress-wrap{padding:10px 40px 0;flex-shrink:0;}
+        .reader-progress-bar{height:3px;background:var(--ink-3);border-radius:2px;overflow:hidden;}
         .reader-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),#e8c97a);transition:width .4s ease;}
-        .reader-progress-label{position:absolute;right:16px;top:6px;font-family:var(--mono);font-size:.58rem;color:var(--text-dim);letter-spacing:.06em;}
+        .reader-progress-info{display:flex;align-items:center;justify-content:space-between;margin-top:5px;}
+        .reader-progress-pct{font-family:var(--mono);font-size:.62rem;color:var(--gold);letter-spacing:.06em;}
+        .reader-progress-count{font-family:var(--mono);font-size:.62rem;color:var(--text-dim);letter-spacing:.04em;}
 
         /* TTS controls */
-        .reader-controls{padding:12px 40px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;background:rgba(13,13,15,.6);}
+        .reader-controls{padding:10px 40px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;background:rgba(13,13,15,.6);}
         .reader-btn-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
         .ctrl-chip{font-family:var(--mono);font-size:.62rem;padding:5px 11px;border-radius:4px;border:1px solid var(--border-mid);background:var(--ink-3);color:var(--text-mid);cursor:pointer;transition:all .12s;white-space:nowrap;}
         .ctrl-chip:hover{background:var(--ink-4);color:var(--text);border-color:rgba(201,168,76,.3);}
@@ -776,7 +765,8 @@ export default function BooksPage() {
           .search-section{padding:28px 24px 0;}
           .books-main{padding:28px 24px 60px;}
           .reader-header{padding:0 20px;}
-          .reader-controls{padding:12px 20px;}
+          .reader-progress-wrap{padding:10px 20px 0;}
+          .reader-controls{padding:10px 20px 12px;}
           .reader-para{padding:8px 24px;font-size:1.05rem;}
           .reader-title{max-width:240px;}
         }
