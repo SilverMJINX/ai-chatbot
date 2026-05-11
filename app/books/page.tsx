@@ -5,7 +5,7 @@ import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
-// Types
+// Types 
 
 /** Gutenberg API shape */
 interface GutenbergBook {
@@ -134,7 +134,7 @@ function textApiPath(book: Book): string {
   return `/api/books/${book.gutenbergId}/text`;
 }
 
-// Nav 
+// Nav
 
 function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
@@ -199,7 +199,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   const speedRef   = useRef(1);
   const linesRef   = useRef<string[]>([]);
 
-  // Fetch text 
+  // Fetch text
   useEffect(() => {
     setLoading(true); setError("");
     fetch(textApiPath(book))
@@ -218,7 +218,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
       .catch(() => {});
   }, [book.uid]);
 
-  // Split text 
+  // Split text
   const chapters  = splitChapters(rawText);
   const lines     = splitParagraphs(chapters[chapter] ?? "");
   const total     = lines.length;
@@ -229,7 +229,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
-  // Scroll to restored position after load 
+  // Scroll to restored position after load
   useEffect(() => {
     if (!loading && lines.length > 0) {
       setTimeout(() => {
@@ -295,7 +295,7 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // TTS 
+  // TTS
   const speakParagraph = useCallback((idx: number) => {
     const currentLines = linesRef.current;
     if (!currentLines[idx]) return;
@@ -479,7 +479,7 @@ const SUGGESTIONS = [
   "purpose", "healing", "love", "loss", "courage", "identity",
 ];
 
-type SearchMode = "curated" | "gutenberg";
+type SearchMode = "curated" | "gutenberg" | "saved";
 
 export default function BooksPage() {
   const { data: session, status } = useSession();
@@ -493,9 +493,91 @@ export default function BooksPage() {
   const [searched, setSearched] = useState(false);
   const [error, setError]       = useState("");
   const [selected, setSelected] = useState<Book | null>(null);
+  const [savedUids, setSavedUids] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Load the user's saved book UIDs on mount so star buttons reflect state
+  useEffect(() => {
+    fetch("/api/books/save")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: { bookUid: string }[]) => {
+        setSavedUids(new Set(data.map(b => b.bookUid)));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load saved books as a Book[] for the Saved tab
+  const loadSaved = async () => {
+    setLoading(true); setSearched(false); setError(""); setBooks([]);
+    try {
+      const data: {
+        bookUid: string; title: string; author: string;
+        source: "curated" | "gutenberg"; htmlUrl: string | null; tags: string[];
+      }[] = await fetch("/api/books/save").then(r => r.json());
+      setBooks(data.map(b => ({
+        uid:          b.bookUid,
+        gutenbergId:  b.source === "gutenberg"
+                        ? Number(b.bookUid.replace("gutenberg-", ""))
+                        : null,
+        title:        b.title,
+        author:       b.author,
+        source:       b.source,
+        htmlUrl:      b.htmlUrl,
+        tags:         b.tags ?? [],
+        downloadCount: 0,
+      })));
+    } catch {
+      setError("Could not load saved books.");
+    }
+    setLoading(false);
+  };
+
+  // Toggle save / unsave — e.stopPropagation() so the card doesn't open the reader
+  const toggleSave = async (book: Book, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isSaved = savedUids.has(book.uid);
+    // Optimistic UI update
+    setSavedUids(prev => {
+      const next = new Set(prev);
+      isSaved ? next.delete(book.uid) : next.add(book.uid);
+      return next;
+    });
+    // If we're in the Saved tab and unsaving, remove from list immediately
+    if (isSaved && mode === "saved") {
+      setBooks(prev => prev.filter(b => b.uid !== book.uid));
+    }
+    try {
+      if (isSaved) {
+        await fetch("/api/books/save", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookUid: book.uid }),
+        });
+      } else {
+        await fetch("/api/books/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookUid:  book.uid,
+            title:    book.title,
+            author:   book.author,
+            source:   book.source,
+            htmlUrl:  book.htmlUrl,
+            tags:     book.tags,
+          }),
+        });
+      }
+    } catch {
+      // Revert optimistic update on failure
+      setSavedUids(prev => {
+        const next = new Set(prev);
+        isSaved ? next.add(book.uid) : next.delete(book.uid);
+        return next;
+      });
+    }
+  };
 
   const search = async () => {
     if (!query.trim()) return;
@@ -681,6 +763,10 @@ export default function BooksPage() {
         .reader-dots span{width:8px;height:8px;border-radius:50%;background:var(--gold);animation:bounce 1.3s infinite ease-in-out;}
         .reader-dots span:nth-child(2){animation-delay:.15s;}
         .reader-dots span:nth-child(3){animation-delay:.3s;}
+        .save-btn{background:none;border:none;cursor:pointer;font-size:1rem;color:var(--text-dim);padding:2px 4px;border-radius:3px;transition:color .15s,transform .15s;line-height:1;flex-shrink:0;}
+        .save-btn:hover{color:var(--gold);transform:scale(1.25);}
+        .save-btn.saved{color:var(--gold);}
+        .saved-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:rgba(201,168,76,.2);color:var(--gold);font-size:.58rem;font-family:var(--mono);margin-left:5px;}
         .reader-gutenberg-btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:.85rem;font-weight:500;padding:10px 22px;border-radius:6px;background:linear-gradient(135deg,var(--gold),#e8c97a);color:var(--ink);text-decoration:none;box-shadow:0 4px 14px var(--gold-glow);transition:all .15s;}
         .reader-gutenberg-btn:hover{transform:translateY(-1px);}
 
@@ -750,11 +836,21 @@ export default function BooksPage() {
               >
                 📚 Project Gutenberg
               </button>
+              <button
+                className={`mode-btn${mode === "saved" ? " active" : ""}`}
+                onClick={() => { setMode("saved"); loadSaved(); }}
+              >
+                ★ Saved
+                {savedUids.size > 0 && (
+                  <span className="saved-count">{savedUids.size}</span>
+                )}
+              </button>
             </div>
           </div>
         </div>
 
-        {/* ── Search ── */}
+        {/* ── Search — hidden in Saved tab ── */}
+        {mode !== "saved" && (
         <div className="search-section">
           <div className="search-wrap">
             <input
@@ -786,6 +882,7 @@ export default function BooksPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* ── Results ── */}
         <main className="books-main">
@@ -796,7 +893,7 @@ export default function BooksPage() {
             </div>
           )}
 
-          {!searched && !loading && (
+          {!searched && !loading && mode !== "saved" && (
             <div className="empty-state">
               <div className="empty-icon">{mode === "curated" ? "✦" : "📚"}</div>
               <p className="empty-title">
@@ -807,6 +904,14 @@ export default function BooksPage() {
                   ? "search by title · author · theme · emotion"
                   : "title · author · subject · 70,000+ books"}
               </p>
+            </div>
+          )}
+
+          {mode === "saved" && !loading && books.length === 0 && !error && (
+            <div className="empty-state">
+              <div className="empty-icon">☆</div>
+              <p className="empty-title">No saved books yet</p>
+              <p className="empty-sub">star a book while browsing to save it here</p>
             </div>
           )}
 
@@ -849,9 +954,18 @@ export default function BooksPage() {
                   )}
                   <div className="book-card-footer">
                     <span className="book-read-btn">Read + Listen →</span>
-                    {book.downloadCount > 0 && (
-                      <span className="book-dl">{book.downloadCount.toLocaleString()}</span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {book.downloadCount > 0 && (
+                        <span className="book-dl">{book.downloadCount.toLocaleString()}</span>
+                      )}
+                      <button
+                        className={`save-btn${savedUids.has(book.uid) ? " saved" : ""}`}
+                        onClick={e => toggleSave(book, e)}
+                        title={savedUids.has(book.uid) ? "Remove from saved" : "Save book"}
+                      >
+                        {savedUids.has(book.uid) ? "★" : "☆"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
