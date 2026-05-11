@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { ObjectId } from "mongodb";
+import clientPromise from "@/lib/mongodb";
 
 export async function GET(
   _: NextRequest,
@@ -6,6 +8,22 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
+  // Check DB for fullText first (manually added books)
+  try {
+    const client = await clientPromise;
+    const db = client.db("atlas-books");
+    const book = await db.collection("books").findOne({ _id: new ObjectId(id) });
+
+    if (book?.fullText) {
+      return new Response(book.fullText, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+  } catch {
+    // Not a valid ObjectId, fall through to Gutenberg
+  }
+
+  // Fall back to Gutenberg URLs
   const candidates = [
     `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
     `https://www.gutenberg.org/files/${id}/${id}.txt`,
