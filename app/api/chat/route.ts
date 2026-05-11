@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+
 import {
   GoogleGenerativeAI,
   Tool,
@@ -179,7 +180,17 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             content: fallbackText,
             book: foundBook
-              ? { id: foundBook.id, title: foundBook.title, author: foundBook.author, reason: foundBook.reason ?? "Recommended by Atlas" }
+              ? { id: foundBook.id, title: foundBook.title, author: foundBook.author, reason: foundBook.reason ?? "Recommended by Atlas",
+                 coverUrl: foundBook.coverUrl,
+                 excerpt: foundBook.excerpt,
+
+                 textUrl: foundBook.textUrl,
+                 epubUrl: foundBook.epubUrl,
+                 htmlUrl: foundBook.htmlUrl,
+
+                 subjects: foundBook.subjects,
+                 tags: foundBook.tags,
+              }
               : undefined,
           });
         }
@@ -203,6 +214,16 @@ export async function POST(req: NextRequest) {
             title:  foundBook.title,
             author: foundBook.author,
             reason: foundBook.reason ?? "Recommended by Atlas",
+            
+            coverUrl: foundBook.coverUrl,
+            excerpt: foundBook.excerpt,
+
+            textUrl: foundBook.textUrl,
+            epubUrl: foundBook.epubUrl,
+            htmlUrl: foundBook.htmlUrl,
+
+            subjects: foundBook.subjects,
+            tags: foundBook.tags,
           }
         : undefined,
     });

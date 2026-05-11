@@ -5,9 +5,6 @@ import { useElevenLabsTTS } from "../../hooks/useElevenLabsTTS";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 
-// Types
-
-/** Gutenberg API shape */
 interface GutenbergBook {
   id: number;
   title: string;
@@ -17,7 +14,6 @@ interface GutenbergBook {
   download_count: number;
 }
 
-/** MongoDB / curated book shape */
 type CuratedBook = {
   id: string;
   gutenbergId: number | null;
@@ -34,11 +30,8 @@ type CuratedBook = {
   reason: string | null;
 };
 
-/** Unified internal book shape */
 interface Book {
-  /** MongoDB string id (curated) or "gutenberg-{id}" */
   uid: string;
-  /** Numeric Gutenberg ID, if available */
   gutenbergId: number | null;
   title: string;
   author: string;
@@ -47,8 +40,6 @@ interface Book {
   downloadCount: number;
   source: "curated" | "gutenberg";
 }
-
-// Text helpers
 
 function stripBoilerplate(text: string): string {
   text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -92,8 +83,6 @@ function splitParagraphs(section: string): string[] {
   });
 }
 
-// Normalise helpers 
-
 function fromCurated(b: CuratedBook): Book {
   return {
     uid: b.id,
@@ -125,14 +114,10 @@ function fromGutenberg(b: GutenbergBook): Book {
   };
 }
 
-/** Return the API path to fetch the raw text for a book */
 function textApiPath(book: Book): string {
-  // For curated books, use MongoDB id; for pure Gutenberg use gutenberg id
   if (book.source === "curated") return `/api/books/${book.uid}/text`;
   return `/api/books/${book.gutenbergId}/text`;
 }
-
-// Nav 
 
 function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
@@ -176,26 +161,33 @@ function UserMenu({ name }: { name: string }) {
   );
 }
 
-// BookReader 
-
-function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
-  const [rawText, setRawText]     = useState("");
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState("");
-  const [chapter, setChapter]     = useState(0);
-  const [position, setPosition]   = useState(0);  // paragraph index within chapter
-  const [saved, setSaved]         = useState(false);
-  const [playing, setPlaying]     = useState(false);
+function BookReader({
+  book,
+  onClose,
+  savedUids,
+  toggleSave,
+}: {
+  book: Book;
+  onClose: () => void;
+  savedUids: Set<string>;
+  toggleSave: (book: Book, e: React.MouseEvent) => Promise<void>;
+}) {
+  const [rawText, setRawText]   = useState("");
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState("");
+  const [chapter, setChapter]   = useState(0);
+  const [position, setPosition] = useState(0);
+  const [saved, setSaved]       = useState(false);
+  const [playing, setPlaying]   = useState(false);
 
   const { speak, stop, status: ttsStatus } = useElevenLabsTTS();
 
-  const paraRefs   = useRef<(HTMLDivElement | null)[]>([]);
-  const saveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const posRef     = useRef(0);
+  const paraRefs  = useRef<(HTMLDivElement | null)[]>([]);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const posRef    = useRef(0);
   const playingRef = useRef(false);
-  const linesRef   = useRef<string[]>([]);
+  const linesRef  = useRef<string[]>([]);
 
-  // Fetch text
   useEffect(() => {
     setLoading(true); setError("");
     fetch(textApiPath(book))
@@ -206,7 +198,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
     return () => stop();
   }, [book.uid]);
 
-  // Restore reading progress
   useEffect(() => {
     fetch(`/api/progress?bookId=${book.uid}`)
       .then(r => r.json())
@@ -214,17 +205,15 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
       .catch(() => {});
   }, [book.uid]);
 
-  // Split text
-  const chapters  = splitChapters(rawText);
-  const lines     = splitParagraphs(chapters[chapter] ?? "");
-  const total     = lines.length;
-  const progress  = total > 0 ? ((position + 1) / total) * 100 : 0;
+  const chapters = splitChapters(rawText);
+  const lines    = splitParagraphs(chapters[chapter] ?? "");
+  const total    = lines.length;
+  const progress = total > 0 ? ((position + 1) / total) * 100 : 0;
 
   useEffect(() => { linesRef.current = lines; }, [lines]);
   useEffect(() => { posRef.current = position; }, [position]);
   useEffect(() => { playingRef.current = playing; }, [playing]);
 
-  // Scroll to restored position after load
   useEffect(() => {
     if (!loading && lines.length > 0) {
       setTimeout(() => {
@@ -234,15 +223,12 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, lines.length]);
 
-  // Scroll active paragraph into view during playback
   useEffect(() => {
     paraRefs.current[position]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [position]);
 
-  // Reset on chapter change
   useEffect(() => { stop(); setPlaying(false); setPosition(0); }, [chapter]);
 
-  // IntersectionObserver — update position while scrolling (read mode)
   const saveProgress = useCallback((idx: number) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaved(false);
@@ -272,7 +258,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
     return () => observer.disconnect();
   }, [loading, lines, saveProgress]);
 
-  // Save on unmount
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -284,13 +269,11 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
     };
   }, [book.uid]);
 
-  // Lock body scroll
   useEffect(() => {
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, []);
 
-  // TTS
   const speakParagraph = useCallback((idx: number) => {
     const currentLines = linesRef.current;
     if (!currentLines[idx]) return;
@@ -323,9 +306,10 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
     if (playing) speakParagraph(i);
   };
 
+  const isFavourited = savedUids.has(book.uid);
+
   return (
     <div className="reader-overlay">
-      {/* Header */}
       <div className="reader-header">
         <div className="reader-header-left">
           <div className="reader-avatar">
@@ -341,6 +325,16 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
         </div>
         <div className="reader-header-right">
           {saved && <span className="reader-saved">✓ Saved</span>}
+
+          {/* favourite button — saves without leaving the reader */}
+          <button
+            className={`save-btn reader-fav-btn${isFavourited ? " saved" : ""}`}
+            onClick={e => toggleSave(book, e)}
+            title={isFavourited ? "Remove from favourites" : "Add to favourites"}
+          >
+            {isFavourited ? "★" : "☆"}
+          </button>
+
           {book.source === "gutenberg" && (
             <span className="reader-source-badge gutenberg-badge">Gutenberg</span>
           )}
@@ -361,7 +355,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
         </div>
       </div>
 
-      {/* Progress bar + label — own clean row */}
       {!loading && !error && lines.length > 0 && (
         <div className="reader-progress-wrap">
           <div className="reader-progress-bar">
@@ -374,7 +367,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
         </div>
       )}
 
-      {/* TTS + chapter controls */}
       {!loading && !error && lines.length > 0 && (
         <div className="reader-controls">
           <div className="reader-btn-row">
@@ -399,7 +391,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
         </div>
       )}
 
-      {/* Body */}
       <div className="reader-body">
         {loading && (
           <div className="reader-status">
@@ -438,8 +429,6 @@ function BookReader({ book, onClose }: { book: Book; onClose: () => void }) {
   );
 }
 
-// Skeleton
-
 function SkeletonCard() {
   return (
     <div className="book-card skeleton-card">
@@ -458,8 +447,6 @@ function SkeletonCard() {
   );
 }
 
-// Main page
-
 const SUGGESTIONS = [
   "loneliness", "friendship", "grief", "anxiety", "resilience",
   "purpose", "healing", "love", "loss", "courage", "identity",
@@ -472,19 +459,18 @@ export default function BooksPage() {
   const isAuthLoading = status === "loading";
   const userName = session?.user?.name || session?.user?.email || "User";
 
-  const [mode, setMode]         = useState<SearchMode>("curated");
-  const [query, setQuery]       = useState("");
-  const [books, setBooks]       = useState<Book[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [error, setError]       = useState("");
-  const [selected, setSelected] = useState<Book | null>(null);
+  const [mode, setMode]           = useState<SearchMode>("curated");
+  const [query, setQuery]         = useState("");
+  const [books, setBooks]         = useState<Book[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [searched, setSearched]   = useState(false);
+  const [error, setError]         = useState("");
+  const [selected, setSelected]   = useState<Book | null>(null);
   const [savedUids, setSavedUids] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Load the user's saved book UIDs on mount so star buttons reflect state
   useEffect(() => {
     fetch("/api/books/save")
       .then(r => r.ok ? r.json() : [])
@@ -494,7 +480,6 @@ export default function BooksPage() {
       .catch(() => {});
   }, []);
 
-  // Load saved books as a Book[] for the Saved tab
   const loadSaved = async () => {
     setLoading(true); setSearched(false); setError(""); setBooks([]);
     try {
@@ -503,15 +488,15 @@ export default function BooksPage() {
         source: "curated" | "gutenberg"; htmlUrl: string | null; tags: string[];
       }[] = await fetch("/api/books/save").then(r => r.json());
       setBooks(data.map(b => ({
-        uid:          b.bookUid,
-        gutenbergId:  b.source === "gutenberg"
-                        ? Number(b.bookUid.replace("gutenberg-", ""))
-                        : null,
-        title:        b.title,
-        author:       b.author,
-        source:       b.source,
-        htmlUrl:      b.htmlUrl,
-        tags:         b.tags ?? [],
+        uid:           b.bookUid,
+        gutenbergId:   b.source === "gutenberg"
+                         ? Number(b.bookUid.replace("gutenberg-", ""))
+                         : null,
+        title:         b.title,
+        author:        b.author,
+        source:        b.source,
+        htmlUrl:       b.htmlUrl,
+        tags:          b.tags ?? [],
         downloadCount: 0,
       })));
     } catch {
@@ -520,17 +505,14 @@ export default function BooksPage() {
     setLoading(false);
   };
 
-  // Toggle save / unsave — e.stopPropagation() so the card doesn't open the reader
   const toggleSave = async (book: Book, e: React.MouseEvent) => {
     e.stopPropagation();
     const isSaved = savedUids.has(book.uid);
-    // Optimistic UI update
     setSavedUids(prev => {
       const next = new Set(prev);
       isSaved ? next.delete(book.uid) : next.add(book.uid);
       return next;
     });
-    // If we're in the Saved tab and unsaving, remove from list immediately
     if (isSaved && mode === "saved") {
       setBooks(prev => prev.filter(b => b.uid !== book.uid));
     }
@@ -546,17 +528,17 @@ export default function BooksPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            bookUid:  book.uid,
-            title:    book.title,
-            author:   book.author,
-            source:   book.source,
-            htmlUrl:  book.htmlUrl,
-            tags:     book.tags,
+            bookUid: book.uid,
+            title:   book.title,
+            author:  book.author,
+            source:  book.source,
+            htmlUrl: book.htmlUrl,
+            tags:    book.tags,
           }),
         });
       }
     } catch {
-      // Revert optimistic update on failure
+      // revert optimistic update on failure
       setSavedUids(prev => {
         const next = new Set(prev);
         isSaved ? next.add(book.uid) : next.delete(book.uid);
@@ -570,7 +552,6 @@ export default function BooksPage() {
     setLoading(true); setSearched(true); setError(""); setBooks([]);
     try {
       if (mode === "curated") {
-        // Atlas curated / MongoDB search
         const res = await fetch(`/api/books/fetch?q=${encodeURIComponent(query.trim())}`);
         if (res.status === 404) { setBooks([]); }
         else if (!res.ok) { setError("Something went wrong. Please try again."); }
@@ -579,7 +560,6 @@ export default function BooksPage() {
           setBooks([fromCurated(data)]);
         }
       } else {
-        // Gutenberg full-text search
         const res = await fetch(`/api/books/search?q=${encodeURIComponent(query.trim())}`);
         if (!res.ok) { setError("Something went wrong. Please try again."); }
         else {
@@ -625,7 +605,6 @@ export default function BooksPage() {
         @keyframes ttsGlow{0%,100%{box-shadow:0 0 0 0 rgba(74,217,120,.3)}50%{box-shadow:0 0 0 6px rgba(74,217,120,0)}}
         .spin{animation:spin 0.7s linear infinite;}
 
-        /* ── NAV ── */
         .nav{position:fixed;top:0;left:0;right:0;z-index:100;height:68px;padding:0 48px;display:flex;align-items:center;gap:8px;background:linear-gradient(to bottom,rgba(13,13,15,.96) 0%,transparent 100%);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);}
         .nav-brand{display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:8px;}
         .nav-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--blue),#6baee8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px var(--blue-glow);flex-shrink:0;}
@@ -639,7 +618,6 @@ export default function BooksPage() {
         .nav-link-active{color:var(--text) !important;border-color:var(--border-mid) !important;background:rgba(255,255,255,.04) !important;}
         .nav-spacer{flex:1;}
 
-        /* User menu */
         .user-menu-wrap{position:relative;}
         .user-menu-btn{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.04);border:1px solid var(--border-mid);border-radius:20px;padding:5px 12px 5px 5px;cursor:pointer;transition:all .15s;color:var(--text);}
         .user-menu-btn:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.18);}
@@ -652,7 +630,6 @@ export default function BooksPage() {
         .signout{color:#f87171 !important;}
         .signout:hover{background:rgba(248,113,113,.08) !important;color:#fca5a5 !important;}
 
-        /* ── PAGE ── */
         .page-wrap{padding-top:68px;min-height:100vh;}
         .page-header{padding:52px 64px 40px;border-bottom:1px solid var(--border);background:radial-gradient(ellipse 60% 50% at 50% 0%,rgba(201,168,76,.06) 0%,transparent 70%);}
         .page-header-inner{max-width:900px;margin:0 auto;}
@@ -661,13 +638,11 @@ export default function BooksPage() {
         .page-title em{font-style:italic;color:var(--gold-light);}
         .page-sub{font-size:.88rem;color:var(--text-mid);font-weight:300;line-height:1.65;max-width:520px;}
 
-        /* ── Mode toggle ── */
         .mode-toggle{display:inline-flex;background:var(--ink-3);border:1px solid var(--border-mid);border-radius:8px;padding:3px;gap:2px;margin-top:22px;}
         .mode-btn{font-family:var(--mono);font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;padding:7px 16px;border-radius:5px;border:none;cursor:pointer;transition:all .18s;color:var(--text-dim);background:transparent;}
         .mode-btn.active{color:var(--gold);background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);box-shadow:0 2px 8px rgba(201,168,76,.1);}
         .mode-btn:not(.active):hover{color:var(--text-mid);background:rgba(255,255,255,.03);}
 
-        /* ── Search ── */
         .search-section{max-width:900px;margin:0 auto;padding:36px 64px 0;}
         .search-wrap{display:flex;align-items:center;gap:10px;background:var(--ink-2);border:1px solid var(--border-mid);border-radius:8px;padding:12px 12px 12px 22px;transition:border-color .2s,box-shadow .2s;}
         .search-wrap:focus-within{border-color:rgba(201,168,76,.4);box-shadow:0 0 0 3px rgba(201,168,76,.06);}
@@ -680,7 +655,6 @@ export default function BooksPage() {
         .suggestion-pill{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;padding:5px 12px;border-radius:20px;border:1px solid var(--border-mid);background:rgba(255,255,255,.02);color:var(--text-dim);cursor:pointer;transition:all .15s;}
         .suggestion-pill:hover{color:var(--gold);border-color:rgba(201,168,76,.3);background:rgba(201,168,76,.04);}
 
-        /* ── Grid ── */
         .books-main{max-width:900px;margin:0 auto;padding:36px 64px 80px;}
         .books-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;}
         .book-card{background:var(--ink-2);border:1px solid var(--border);border-radius:10px;padding:20px;cursor:pointer;transition:all .18s;animation:fadeUp .3s cubic-bezier(.22,1,.36,1) both;}
@@ -697,14 +671,12 @@ export default function BooksPage() {
         .book-card:hover .book-read-btn{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.4);}
         .book-dl{font-size:.62rem;color:var(--text-dim);font-family:var(--mono);}
 
-        /* ── Empty / error ── */
         .empty-state{text-align:center;padding:72px 0;animation:fadeUp .4s ease both;}
         .empty-icon{font-size:2.8rem;margin-bottom:18px;opacity:.35;}
         .empty-title{font-family:var(--serif);font-size:1.4rem;font-weight:300;color:var(--text-mid);margin-bottom:8px;}
         .empty-sub{font-size:.78rem;color:var(--text-dim);font-family:var(--mono);letter-spacing:.04em;}
         .error-banner{display:flex;align-items:center;gap:10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);border-radius:8px;padding:12px 16px;font-size:.82rem;color:#f87171;margin-bottom:24px;animation:fadeUp .3s ease both;}
 
-        /* ── READER ── */
         .reader-overlay{position:fixed;inset:0;z-index:200;background:var(--ink);display:flex;flex-direction:column;animation:fadeIn .2s ease both;}
         .reader-header{height:64px;padding:0 40px;display:flex;align-items:center;justify-content:space-between;background:rgba(13,13,15,.95);border-bottom:1px solid var(--border);backdrop-filter:blur(14px);flex-shrink:0;gap:16px;}
         .reader-header-left{display:flex;align-items:center;gap:14px;min-width:0;}
@@ -728,7 +700,6 @@ export default function BooksPage() {
         .reader-progress-pct{font-family:var(--mono);font-size:.62rem;color:var(--gold);letter-spacing:.06em;}
         .reader-progress-count{font-family:var(--mono);font-size:.62rem;color:var(--text-dim);letter-spacing:.04em;}
 
-        /* TTS controls */
         .reader-controls{padding:10px 40px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;background:rgba(13,13,15,.6);}
         .reader-btn-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
         .ctrl-chip{font-family:var(--mono);font-size:.62rem;padding:5px 11px;border-radius:4px;border:1px solid var(--border-mid);background:var(--ink-3);color:var(--text-mid);cursor:pointer;transition:all .12s;white-space:nowrap;}
@@ -752,9 +723,16 @@ export default function BooksPage() {
         .reader-dots span{width:8px;height:8px;border-radius:50%;background:var(--gold);animation:bounce 1.3s infinite ease-in-out;}
         .reader-dots span:nth-child(2){animation-delay:.15s;}
         .reader-dots span:nth-child(3){animation-delay:.3s;}
+
         .save-btn{background:none;border:none;cursor:pointer;font-size:1rem;color:var(--text-dim);padding:2px 4px;border-radius:3px;transition:color .15s,transform .15s;line-height:1;flex-shrink:0;}
         .save-btn:hover{color:var(--gold);transform:scale(1.25);}
         .save-btn.saved{color:var(--gold);}
+
+        // larger, more prominent star when inside the reader header
+        .reader-fav-btn{font-size:1.25rem;padding:4px 6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--border-mid) !important;background:var(--ink-3) !important;transition:all .15s !important;}
+        .reader-fav-btn:hover{border-color:rgba(201,168,76,.4) !important;background:rgba(201,168,76,.08) !important;transform:scale(1.15) !important;}
+        .reader-fav-btn.saved{color:var(--gold);border-color:rgba(201,168,76,.35) !important;background:rgba(201,168,76,.1) !important;}
+
         .saved-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:rgba(201,168,76,.2);color:var(--gold);font-size:.58rem;font-family:var(--mono);margin-left:5px;}
         .reader-gutenberg-btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:.85rem;font-weight:500;padding:10px 22px;border-radius:6px;background:linear-gradient(135deg,var(--gold),#e8c97a);color:var(--ink);text-decoration:none;box-shadow:0 4px 14px var(--gold-glow);transition:all .15s;}
         .reader-gutenberg-btn:hover{transform:translateY(-1px);}
@@ -776,7 +754,6 @@ export default function BooksPage() {
         }
       `}</style>
 
-      {/* ── NAV ── */}
       <nav className="nav">
         <Link href="/" className="nav-brand">
           <div className="nav-logo">
@@ -799,7 +776,6 @@ export default function BooksPage() {
       </nav>
 
       <div className="page-wrap">
-        {/* ── Header ── */}
         <div className="page-header">
           <div className="page-header-inner">
             <div className="page-eyebrow">
@@ -811,8 +787,6 @@ export default function BooksPage() {
               Search Atlas-curated books by theme or emotion, or explore 70,000+ public domain classics via Project Gutenberg.
               Read in full, listen via ElevenLabs narration — your progress is saved automatically.
             </p>
-
-            {/* Mode toggle */}
             <div className="mode-toggle">
               <button
                 className={`mode-btn${mode === "curated" ? " active" : ""}`}
@@ -839,42 +813,38 @@ export default function BooksPage() {
           </div>
         </div>
 
-        {/* ── Search — hidden in Saved tab ── */}
         {mode !== "saved" && (
-        <div className="search-section">
-          <div className="search-wrap">
-            <input
-              ref={inputRef}
-              className="search-input"
-              placeholder={
-                mode === "curated"
-                  ? "Search by title, author, theme… e.g. loneliness, Viktor Frankl"
-                  : "Search by title or author… e.g. Shakespeare, Frankenstein"
-              }
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && search()}
-            />
-            <button className="search-btn" onClick={search} disabled={!query.trim() || loading}>
-              {loading
-                ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
-                : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              }
-            </button>
-          </div>
-
-          {/* Suggestion pills — only in curated mode */}
-          {mode === "curated" && (
-            <div className="suggestions">
-              {SUGGESTIONS.map(s => (
-                <button key={s} className="suggestion-pill" onClick={() => setQuery(s)}>{s}</button>
-              ))}
+          <div className="search-section">
+            <div className="search-wrap">
+              <input
+                ref={inputRef}
+                className="search-input"
+                placeholder={
+                  mode === "curated"
+                    ? "Search by title, author, theme… e.g. loneliness, Viktor Frankl"
+                    : "Search by title or author… e.g. Shakespeare, Frankenstein"
+                }
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && search()}
+              />
+              <button className="search-btn" onClick={search} disabled={!query.trim() || loading}>
+                {loading
+                  ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+                  : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                }
+              </button>
             </div>
-          )}
-        </div>
+            {mode === "curated" && (
+              <div className="suggestions">
+                {SUGGESTIONS.map(s => (
+                  <button key={s} className="suggestion-pill" onClick={() => setQuery(s)}>{s}</button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
-        {/* ── Results ── */}
         <main className="books-main">
           {error && (
             <div className="error-banner">
@@ -964,7 +934,14 @@ export default function BooksPage() {
         </main>
       </div>
 
-      {selected && <BookReader book={selected} onClose={() => setSelected(null)}/>}
+      {selected && (
+        <BookReader
+          book={selected}
+          onClose={() => setSelected(null)}
+          savedUids={savedUids}
+          toggleSave={toggleSave}
+        />
+      )}
     </>
   );
 }
